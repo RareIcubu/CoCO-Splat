@@ -1,0 +1,3 @@
+/home/jakub/Dokumenty/inzynierka/src/build/CMakeFiles/3DGS-OpenGL.dir
+/home/jakub/Dokumenty/inzynierka/src/build/CMakeFiles/edit_cache.dir
+/home/jakub/Dokumenty/inzynierka/src/build/CMakeFiles/rebuild_cache.dir
