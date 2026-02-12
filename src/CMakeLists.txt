@@ -18,6 +18,8 @@ add_executable(${TARGET_NAME})
 target_sources(${TARGET_NAME} PRIVATE
     main.cpp
     glad.c
+    shader.cpp
+    shader.h
 )
 
 target_include_directories(${TARGET_NAME} PRIVATE
@@ -25,7 +27,7 @@ target_include_directories(${TARGET_NAME} PRIVATE
 )
 
 target_link_libraries(${TARGET_NAME} PRIVATE
-	glfw
-	OpenGL::GL
+    glfw
+    OpenGL::GL
     glm::glm
 )
