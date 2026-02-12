@@ -2,6 +2,11 @@
 
 #include "shader.h"
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <iostream>
 #include <math.h>
 
@@ -31,6 +36,12 @@ unsigned int indices[]{
 };
 
 int main() {
+
+  // glm::vec4 vec(1.0f, 0.0f, 0.0f, 1.0f);
+  // glm::mat4 trans = glm::mat4(1.0f);
+  // trans = glm::translate(trans, glm::vec3(1.0f, 1.0f, 0.0f));
+  // vec = trans * vec;
+  // std::cout << vec.x << vec.y << vec.z << std::endl;
 
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -91,9 +102,22 @@ int main() {
     // float greenValue = (sin(timeValue) / 2.0f) + 0.5f;
     // int vertexColorLocation = glGetUniformLocation(shaderProgram,
     // "ourColor");
-
+    unsigned int transformLoc = glGetUniformLocation(ourShader.ID, "transform");
     ourShader.use();
     // glUniform4f(vertexColorLocation, 0.0f, greenValue, 0.0f, 1.0f);
+
+    // Rotate 90 degress around the Z axis
+    glm::quat myRotation =
+        glm::angleAxis((float)glfwGetTime(), glm::vec3(0.0f, 0.0f, 1.0f));
+    // Convert the quaternion to rotation matrix
+    glm::mat4 rotationMatrix = glm::toMat4(myRotation);
+    // Create a transforamtion matrix
+    glm::mat4 trans = glm::mat4(1.0f);
+    // Apply the rotation to the transformation matrix
+    trans = trans * rotationMatrix;
+    // Scale the transforamtion matrix by 0.5 in all dimensions
+    trans = glm::scale(trans, glm::vec3(0.5f, 0.5f, 0.5f));
+    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
 
     glBindVertexArray(VAO);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
