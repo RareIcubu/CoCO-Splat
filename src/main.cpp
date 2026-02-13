@@ -1,5 +1,6 @@
 #include <glad/glad.h>
 
+#include "camera.h"
 #include "shader.h"
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -7,29 +8,94 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <glm/trigonometric.hpp>
 #include <iostream>
 #include <math.h>
+
+Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+
+float deltaTime = 0.0f; // Time between current frame and last frame
+float lastFrame = 0.0f; // Time of last frame
+
+float lastX = 400, lastY = 300;
+bool firstMouse = true;
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   glViewport(0, 0, width, height);
 }
 
+void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
+  if (firstMouse) {
+    lastX = xpos;
+    lastY = ypos;
+    firstMouse = false;
+  }
+
+  float xoffset = xpos - lastX;
+  float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom
+                                // to top
+
+  lastX = xpos;
+  lastY = ypos;
+
+  camera.ProcessMouseMovement(xoffset, yoffset);
+}
+
+void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
+  camera.ProcessMouseScroll(static_cast<float>(yoffset));
+}
+
 void processInput(GLFWwindow *window) {
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
     glfwSetWindowShouldClose(window, true);
-  if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+  if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS)
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-  else if (glfwGetKey(window, GLFW_KEY_W) == GLFW_RELEASE)
+  else if (glfwGetKey(window, GLFW_KEY_X) == GLFW_RELEASE)
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+  if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+    camera.ProcessKeyboard(CameraDirection::FORWARD, deltaTime);
+  if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+    camera.ProcessKeyboard(CameraDirection::BACKWARD, deltaTime);
+  if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+    camera.ProcessKeyboard(CameraDirection::LEFT, deltaTime);
+  if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+    camera.ProcessKeyboard(CameraDirection::RIGHT, deltaTime);
 }
 
 float vertices[] = {
-    // position                       //color
-    0.5f,  0.5f,  0.0f, 1.0f, 0.0f, 0.0f, // top right
-    0.5f,  -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, // bottom right
-    -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, // bottom left
-    -0.5f, 0.5f,  0.0f, 1.0f, 0.0f, 0.0f  // top left
-};
+    // Pozycje            // Kolory (R, G, B)
+
+    // Tył (Czerwony)
+    -0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f,
+    0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 0.0f,
+    -0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 0.0f, -0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f,
+
+    // Przód (Zielony)
+    -0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 0.0f,
+    0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f,
+    -0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f, -0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 0.0f,
+
+    // Lewo (Niebieski)
+    -0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f, -0.5f, 0.5f, -0.5f, 0.0f, 0.0f, 1.0f,
+    -0.5f, -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
+    1.0f, -0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f, -0.5f, 0.5f, 0.5f, 0.0f, 0.0f,
+    1.0f,
+
+    // Prawo (Żółty)
+    0.5f, 0.5f, 0.5f, 1.0f, 1.0f, 0.0f, 0.5f, 0.5f, -0.5f, 1.0f, 1.0f, 0.0f,
+    0.5f, -0.5f, -0.5f, 1.0f, 1.0f, 0.0f, 0.5f, -0.5f, -0.5f, 1.0f, 1.0f, 0.0f,
+    0.5f, -0.5f, 0.5f, 1.0f, 1.0f, 0.0f, 0.5f, 0.5f, 0.5f, 1.0f, 1.0f, 0.0f,
+
+    // Dół (Cyjan/Jasnoniebieski)
+    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f, 0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f,
+    0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 1.0f, 0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 1.0f,
+    -0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 1.0f, -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f,
+
+    // Góra (Magenta/Fiolet)
+    -0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 1.0f, 0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 1.0f,
+    0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 1.0f, 0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 1.0f,
+    -0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 1.0f, -0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 1.0f};
 unsigned int indices[]{
     0, 1, 3, // first triangle
     1, 2, 3  // second triangle
@@ -54,8 +120,10 @@ int main() {
     glfwTerminate();
     return -1;
   }
+  // GLFW settings
   glfwMakeContextCurrent(window);
   glfwSetInputMode(window, GLFW_STICKY_KEYS, 1);
+  glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
   if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
     std::cout << "Failed to initialize GLAD" << std::endl;
@@ -65,6 +133,9 @@ int main() {
   glViewport(0, 0, 800, 600);
   glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
+  glfwSetCursorPosCallback(window, mouse_callback);
+  glfwSetScrollCallback(window, scroll_callback);
+
   unsigned int VBO;
   glGenBuffers(1, &VBO);
 
@@ -73,15 +144,15 @@ int main() {
 
   glBindVertexArray(VAO);
 
-  unsigned int EBO;
-  glGenBuffers(1, &EBO);
+  // unsigned int EBO;
+  // glGenBuffers(1, &EBO);
 
   glBindBuffer(GL_ARRAY_BUFFER, VBO);
   glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices,
-               GL_STATIC_DRAW);
+  // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+  // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices,
+  //              GL_STATIC_DRAW);
 
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
@@ -92,35 +163,61 @@ int main() {
 
   Shader ourShader("../shaders/shader.vert", "../shaders/shader.frag");
 
+  glEnable(GL_DEPTH_TEST);
+
   while (!glfwWindowShouldClose(window)) {
     processInput(window);
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // float timeValue = glfwGetTime();
     // float greenValue = (sin(timeValue) / 2.0f) + 0.5f;
     // int vertexColorLocation = glGetUniformLocation(shaderProgram,
     // "ourColor");
-    unsigned int transformLoc = glGetUniformLocation(ourShader.ID, "transform");
-    ourShader.use();
-    // glUniform4f(vertexColorLocation, 0.0f, greenValue, 0.0f, 1.0f);
-
+    // unsigned int transformLoc = glGetUniformLocation(ourShader.ID,
+    // "transform");
     // Rotate 90 degress around the Z axis
     glm::quat myRotation =
-        glm::angleAxis((float)glfwGetTime(), glm::vec3(0.0f, 0.0f, 1.0f));
-    // Convert the quaternion to rotation matrix
-    glm::mat4 rotationMatrix = glm::toMat4(myRotation);
-    // Create a transforamtion matrix
-    glm::mat4 trans = glm::mat4(1.0f);
-    // Apply the rotation to the transformation matrix
-    trans = trans * rotationMatrix;
-    // Scale the transforamtion matrix by 0.5 in all dimensions
-    trans = glm::scale(trans, glm::vec3(0.5f, 0.5f, 0.5f));
-    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
+        glm::angleAxis((float)glfwGetTime() * glm::radians(50.0f),
+                       glm::vec3(0.5f, 1.0f, 0.0f));
+    // Convert the quaternion to model matrix
+    glm::mat4 model = glm::toMat4(myRotation);
+    // Create view matrix
+    glm::mat4 view = glm::mat4(1.0f);
+    // Translate the view matrix to move the scene backwards (so we can see it)
+    view = camera.GetViewMatrix();
+    // Create projection matrix
+    glm::mat4 projection;
+    // Create the projection matrix using perspective projection with a 45
+    // degreee field of view, an aspect ration of 800/600, and a near and far
+    // plane of 0.1 and 100.0
+    projection = glm::perspective(glm::radians(camera.Zoom), 800.0f / 600.0f,
+                                  0.1f, 100.0f);
 
+    ourShader.use();
+    // glUniform4f(vertexColorLocation, 0.0f, greenValue, 0.0f, 1.0f);
+    int modelLoc = glGetUniformLocation(ourShader.ID, "model");
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+    int viewLoc = glGetUniformLocation(ourShader.ID, "view");
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+    int projectionLoc = glGetUniformLocation(ourShader.ID, "projection");
+    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+    float currentFrame = glfwGetTime();
+    deltaTime = currentFrame - lastFrame;
+    lastFrame = currentFrame;
+
+    // Create a transforamtion matrix
+    // glm::mat4 trans = glm::mat4(1.0f);
+    // Apply the rotation to the transformation matrix
+    // trans = trans * rotationMatrix;
+    // Scale the transforamtion matrix by 0.5 in all dimensions
+    // trans = glm::scale(trans, glm::vec3(0.5f, 0.5f, 0.5f));
+    // glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
     glBindVertexArray(VAO);
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    // glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
     glBindVertexArray(0);
     glfwSwapBuffers(window);
     glfwPollEvents();

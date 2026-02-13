@@ -20,6 +20,8 @@ target_sources(${TARGET_NAME} PRIVATE
     glad.c
     shader.cpp
     shader.h
+    camera.h
+    camera.cpp
 )
 
 target_include_directories(${TARGET_NAME} PRIVATE
