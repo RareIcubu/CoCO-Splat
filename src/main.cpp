@@ -63,43 +63,13 @@ void processInput(GLFWwindow *window) {
     camera.ProcessKeyboard(CameraDirection::RIGHT, deltaTime);
 }
 
-float vertices[] = {
-    // Pozycje            // Kolory (R, G, B)
+float quadVertices[] = {
+    // positions     // colors
+    -0.05f, 0.05f, 1.0f,   0.0f,   0.0f, 0.05f, -0.05f, 0.0f,
+    1.0f,   0.0f,  -0.05f, -0.05f, 0.0f, 0.0f,  1.0f,
 
-    // Tył (Czerwony)
-    -0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f,
-    0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 0.0f,
-    -0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 0.0f, -0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f,
-
-    // Przód (Zielony)
-    -0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 0.0f,
-    0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f,
-    -0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f, -0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 0.0f,
-
-    // Lewo (Niebieski)
-    -0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f, -0.5f, 0.5f, -0.5f, 0.0f, 0.0f, 1.0f,
-    -0.5f, -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
-    1.0f, -0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f, -0.5f, 0.5f, 0.5f, 0.0f, 0.0f,
-    1.0f,
-
-    // Prawo (Żółty)
-    0.5f, 0.5f, 0.5f, 1.0f, 1.0f, 0.0f, 0.5f, 0.5f, -0.5f, 1.0f, 1.0f, 0.0f,
-    0.5f, -0.5f, -0.5f, 1.0f, 1.0f, 0.0f, 0.5f, -0.5f, -0.5f, 1.0f, 1.0f, 0.0f,
-    0.5f, -0.5f, 0.5f, 1.0f, 1.0f, 0.0f, 0.5f, 0.5f, 0.5f, 1.0f, 1.0f, 0.0f,
-
-    // Dół (Cyjan/Jasnoniebieski)
-    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f, 0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f,
-    0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 1.0f, 0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 1.0f,
-    -0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 1.0f, -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f,
-
-    // Góra (Magenta/Fiolet)
-    -0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 1.0f, 0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 1.0f,
-    0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 1.0f, 0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 1.0f,
-    -0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 1.0f, -0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 1.0f};
-unsigned int indices[]{
-    0, 1, 3, // first triangle
-    1, 2, 3  // second triangle
-};
+    -0.05f, 0.05f, 1.0f,   0.0f,   0.0f, 0.05f, -0.05f, 0.0f,
+    1.0f,   0.0f,  0.05f,  0.05f,  0.0f, 1.0f,  1.0f};
 
 int main() {
 
@@ -108,6 +78,20 @@ int main() {
   // trans = glm::translate(trans, glm::vec3(1.0f, 1.0f, 0.0f));
   // vec = trans * vec;
   // std::cout << vec.x << vec.y << vec.z << std::endl;
+  glm::vec2 translations[1000000];
+  int index = 0;
+  float offset = 0.1f;
+  int amountofInstances = 0;
+  for (int y = -10; y < 100; y += 2) {
+    for (int x = -10; x < 5000; x += 2) {
+      glm::vec2 translation;
+      translation.x = (float)x / 10.0f + offset;
+      translation.y = (float)y / 10.0f + offset;
+      translations[index++] = translation;
+      amountofInstances = index;
+    }
+  }
+  std::cout << "Amount of instances: " << amountofInstances << std::endl;
 
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -139,6 +123,9 @@ int main() {
   unsigned int VBO;
   glGenBuffers(1, &VBO);
 
+  unsigned int instanceVBO;
+  glGenBuffers(1, &instanceVBO);
+
   unsigned int VAO;
   glGenVertexArrays(1, &VAO);
 
@@ -148,18 +135,26 @@ int main() {
   // glGenBuffers(1, &EBO);
 
   glBindBuffer(GL_ARRAY_BUFFER, VBO);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices,
+               GL_STATIC_DRAW);
 
   // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
   // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices,
   //              GL_STATIC_DRAW);
-
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
 
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
-                        (void *)(3 * sizeof(float)));
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float),
+                        (void *)(2 * sizeof(float)));
   glEnableVertexAttribArray(1);
+
+  glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+  glBufferData(GL_ARRAY_BUFFER, amountofInstances * sizeof(glm::vec2),
+               &translations[0], GL_STATIC_DRAW);
+
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
+  glVertexAttribDivisor(2, 1);
 
   Shader ourShader("../shaders/shader.vert", "../shaders/shader.frag");
 
@@ -179,8 +174,7 @@ int main() {
     // "transform");
     // Rotate 90 degress around the Z axis
     glm::quat myRotation =
-        glm::angleAxis((float)glfwGetTime() * glm::radians(50.0f),
-                       glm::vec3(0.5f, 1.0f, 0.0f));
+        glm::angleAxis(glm::radians(0.0f), glm::vec3(0.0f, 0.0f, 0.0f));
     // Convert the quaternion to model matrix
     glm::mat4 model = glm::toMat4(myRotation);
     // Create view matrix
@@ -196,6 +190,7 @@ int main() {
                                   0.1f, 100.0f);
 
     ourShader.use();
+
     // glUniform4f(vertexColorLocation, 0.0f, greenValue, 0.0f, 1.0f);
     int modelLoc = glGetUniformLocation(ourShader.ID, "model");
     glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
@@ -217,7 +212,7 @@ int main() {
     // glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
     glBindVertexArray(VAO);
     // glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, 6, amountofInstances);
     glBindVertexArray(0);
     glfwSwapBuffers(window);
     glfwPollEvents();
