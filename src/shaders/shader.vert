@@ -1,7 +1,7 @@
 #version 460 core
 layout (location=0) in vec2 aQuadPos;
 layout (location=2) in vec3 aInstancePos;
-layout (location=3) in vec2 aInstanceColor;
+layout (location=3) in vec3 aInstanceColor;
 
 uniform mat4 model;
 uniform mat4 view;
