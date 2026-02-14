@@ -1,3 +1,4 @@
 src/.cache
 .cache
+*.ply
 src/build

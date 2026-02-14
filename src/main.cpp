@@ -1,6 +1,7 @@
 #include <glad/glad.h>
 
 #include "camera.h"
+#include "parser.h"
 #include "shader.h"
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -73,25 +74,14 @@ float quadVertices[] = {
 
 int main() {
 
-  // glm::vec4 vec(1.0f, 0.0f, 0.0f, 1.0f);
-  // glm::mat4 trans = glm::mat4(1.0f);
-  // trans = glm::translate(trans, glm::vec3(1.0f, 1.0f, 0.0f));
-  // vec = trans * vec;
-  // std::cout << vec.x << vec.y << vec.z << std::endl;
-  glm::vec2 translations[1000000];
-  int index = 0;
-  float offset = 0.1f;
-  int amountofInstances = 0;
-  for (int y = -10; y < 100; y += 2) {
-    for (int x = -10; x < 5000; x += 2) {
-      glm::vec2 translation;
-      translation.x = (float)x / 10.0f + offset;
-      translation.y = (float)y / 10.0f + offset;
-      translations[index++] = translation;
-      amountofInstances = index;
-    }
+  GaussianSplatParser parser;
+
+  parser.readPlyFile("../../DELL.ply");
+
+  if (parser.splats.empty()) {
+    std::cerr << "No splats found in the PLY file." << std::endl;
+    return -1;
   }
-  std::cout << "Amount of instances: " << amountofInstances << std::endl;
 
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -149,12 +139,18 @@ int main() {
   glEnableVertexAttribArray(1);
 
   glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-  glBufferData(GL_ARRAY_BUFFER, amountofInstances * sizeof(glm::vec2),
-               &translations[0], GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, parser.splats.size() * sizeof(GaussianSplat),
+               parser.splats.data(), GL_STATIC_DRAW);
 
   glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GaussianSplat),
+                        (void *)0);
   glVertexAttribDivisor(2, 1);
+
+  glEnableVertexAttribArray(3);
+  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(GaussianSplat),
+                        (void *)(3 * sizeof(float)));
+  glVertexAttribDivisor(3, 1);
 
   Shader ourShader("../shaders/shader.vert", "../shaders/shader.frag");
 
@@ -166,12 +162,6 @@ int main() {
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // float timeValue = glfwGetTime();
-    // float greenValue = (sin(timeValue) / 2.0f) + 0.5f;
-    // int vertexColorLocation = glGetUniformLocation(shaderProgram,
-    // "ourColor");
-    // unsigned int transformLoc = glGetUniformLocation(ourShader.ID,
-    // "transform");
     // Rotate 90 degress around the Z axis
     glm::quat myRotation =
         glm::angleAxis(glm::radians(0.0f), glm::vec3(0.0f, 0.0f, 0.0f));
@@ -203,16 +193,9 @@ int main() {
     deltaTime = currentFrame - lastFrame;
     lastFrame = currentFrame;
 
-    // Create a transforamtion matrix
-    // glm::mat4 trans = glm::mat4(1.0f);
-    // Apply the rotation to the transformation matrix
-    // trans = trans * rotationMatrix;
-    // Scale the transforamtion matrix by 0.5 in all dimensions
-    // trans = glm::scale(trans, glm::vec3(0.5f, 0.5f, 0.5f));
-    // glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
     glBindVertexArray(VAO);
     // glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-    glDrawArraysInstanced(GL_TRIANGLES, 0, 6, amountofInstances);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, 6, parser.vertexCount);
     glBindVertexArray(0);
     glfwSwapBuffers(window);
     glfwPollEvents();

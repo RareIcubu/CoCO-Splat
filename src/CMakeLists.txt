@@ -22,6 +22,8 @@ target_sources(${TARGET_NAME} PRIVATE
     shader.h
     camera.h
     camera.cpp
+    parser.h
+    parser.cpp
 )
 
 target_include_directories(${TARGET_NAME} PRIVATE
