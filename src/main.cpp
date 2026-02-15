@@ -65,12 +65,8 @@ void processInput(GLFWwindow *window) {
 }
 
 float quadVertices[] = {
-    // positions     // colors
-    -0.05f, 0.05f, 1.0f,   0.0f,   0.0f, 0.05f, -0.05f, 0.0f,
-    1.0f,   0.0f,  -0.05f, -0.05f, 0.0f, 0.0f,  1.0f,
-
-    -0.05f, 0.05f, 1.0f,   0.0f,   0.0f, 0.05f, -0.05f, 0.0f,
-    1.0f,   0.0f,  0.05f,  0.05f,  0.0f, 1.0f,  1.0f};
+    // position
+    -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f};
 
 int main() {
 
@@ -134,22 +130,24 @@ int main() {
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
 
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float),
-                        (void *)(2 * sizeof(float)));
-  glEnableVertexAttribArray(1);
-
   glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
   glBufferData(GL_ARRAY_BUFFER, parser.splats.size() * sizeof(GaussianSplat),
                parser.splats.data(), GL_STATIC_DRAW);
 
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GaussianSplat),
+                        (void *)0);
+  glVertexAttribDivisor(1, 1);
+
   glEnableVertexAttribArray(2);
   glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GaussianSplat),
-                        (void *)0);
+                        (void *)(3 * sizeof(float)));
   glVertexAttribDivisor(2, 1);
 
   glEnableVertexAttribArray(3);
   glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(GaussianSplat),
-                        (void *)(3 * sizeof(float)));
+                        (void *)(51 * sizeof(float)));
+
   glVertexAttribDivisor(3, 1);
 
   Shader ourShader("../shaders/shader.vert", "../shaders/shader.frag");
@@ -177,7 +175,7 @@ int main() {
     // degreee field of view, an aspect ration of 800/600, and a near and far
     // plane of 0.1 and 100.0
     projection = glm::perspective(glm::radians(camera.Zoom), 800.0f / 600.0f,
-                                  0.1f, 100.0f);
+                                  0.1f, 1000.0f);
 
     ourShader.use();
 
@@ -195,7 +193,7 @@ int main() {
 
     glBindVertexArray(VAO);
     // glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-    glDrawArraysInstanced(GL_TRIANGLES, 0, 6, parser.vertexCount);
+    glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, parser.vertexCount);
     glBindVertexArray(0);
     glfwSwapBuffers(window);
     glfwPollEvents();
