@@ -84,7 +84,7 @@ int main() {
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-  GLFWwindow *window = glfwCreateWindow(800, 600, "LearnOpenGL", NULL, NULL);
+  GLFWwindow *window = glfwCreateWindow(1920, 1080, "3DGS-OpenGL", NULL, NULL);
   if (window == NULL) {
     std::cout << "Failed to create GLFW window" << std::endl;
     glfwTerminate();
@@ -124,35 +124,55 @@ int main() {
   glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices,
                GL_STATIC_DRAW);
 
-  // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-  // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices,
-  //              GL_STATIC_DRAW);
-  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
-
+  // instance VBO (optimized with FP16 - 28B for splat)
   glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-  glBufferData(GL_ARRAY_BUFFER, parser.splats.size() * sizeof(GaussianSplat),
+  glBufferData(GL_ARRAY_BUFFER,
+               parser.splats.size() * sizeof(GaussianSplatFP16),
                parser.splats.data(), GL_STATIC_DRAW);
 
+  parser.splats.clear();
+  parser.splats.shrink_to_fit();
+
+  // Atribute 1: position (3x GL_HALF_FLOAT)
   glEnableVertexAttribArray(1);
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GaussianSplat),
-                        (void *)0);
+  glVertexAttribPointer(1, 3, GL_HALF_FLOAT, GL_FALSE,
+                        sizeof(GaussianSplatFP16),
+                        (void *)offsetof(GaussianSplatFP16, pos));
   glVertexAttribDivisor(1, 1);
-
+  // Atribute 2: Base color SH0 (f_dc[3])
   glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GaussianSplat),
-                        (void *)(3 * sizeof(float)));
+  glVertexAttribPointer(2, 3, GL_HALF_FLOAT, GL_FALSE,
+                        sizeof(GaussianSplatFP16),
+                        (void *)offsetof(GaussianSplatFP16, f_dc));
   glVertexAttribDivisor(2, 1);
-
+  // Attribute 3: Opacity
   glEnableVertexAttribArray(3);
-  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(GaussianSplat),
-                        (void *)(51 * sizeof(float)));
+  glVertexAttribPointer(3, 1, GL_HALF_FLOAT, GL_FALSE,
+                        sizeof(GaussianSplatFP16),
+                        (void *)offsetof(GaussianSplatFP16, opacity));
 
   glVertexAttribDivisor(3, 1);
+  // Attribute 4: Scale
+  glEnableVertexAttribArray(4);
+  glVertexAttribPointer(4, 3, GL_HALF_FLOAT, GL_FALSE,
+                        sizeof(GaussianSplatFP16),
+                        (void *)offsetof(GaussianSplatFP16, scale));
+  glVertexAttribDivisor(4, 1);
+
+  // Attribute 5: Quaternion rotation
+  glEnableVertexAttribArray(5);
+  glVertexAttribPointer(5, 4, GL_HALF_FLOAT, GL_FALSE,
+                        sizeof(GaussianSplatFP16),
+                        (void *)offsetof(GaussianSplatFP16, rot));
+  glVertexAttribDivisor(5, 1);
 
   Shader ourShader("../shaders/shader.vert", "../shaders/shader.frag");
 
-  glEnable(GL_DEPTH_TEST);
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   while (!glfwWindowShouldClose(window)) {
     processInput(window);
@@ -162,9 +182,10 @@ int main() {
 
     // Rotate 90 degress around the Z axis
     glm::quat myRotation =
-        glm::angleAxis(glm::radians(0.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+        glm::angleAxis(glm::radians(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     // Convert the quaternion to model matrix
-    glm::mat4 model = glm::toMat4(myRotation);
+    glm::mat4 model =
+        glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, -1.0f, -1.0f));
     // Create view matrix
     glm::mat4 view = glm::mat4(1.0f);
     // Translate the view matrix to move the scene backwards (so we can see it)
