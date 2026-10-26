@@ -17,6 +17,7 @@ Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
 
 float deltaTime = 0.0f; // Time between current frame and last frame
 float lastFrame = 0.0f; // Time of last frame
+float cameraSpeed = 0.0f;
 
 float lastX = 400, lastY = 300;
 bool firstMouse = true;
@@ -54,14 +55,19 @@ void processInput(GLFWwindow *window) {
   else if (glfwGetKey(window, GLFW_KEY_X) == GLFW_RELEASE)
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
+  if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+    cameraSpeed = 8.0f;
+  else
+    cameraSpeed = 1.0f;
+
   if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-    camera.ProcessKeyboard(CameraDirection::FORWARD, deltaTime);
+    camera.ProcessKeyboard(CameraDirection::FORWARD, deltaTime * cameraSpeed);
   if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-    camera.ProcessKeyboard(CameraDirection::BACKWARD, deltaTime);
+    camera.ProcessKeyboard(CameraDirection::BACKWARD, deltaTime * cameraSpeed);
   if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-    camera.ProcessKeyboard(CameraDirection::LEFT, deltaTime);
+    camera.ProcessKeyboard(CameraDirection::LEFT, deltaTime * cameraSpeed);
   if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-    camera.ProcessKeyboard(CameraDirection::RIGHT, deltaTime);
+    camera.ProcessKeyboard(CameraDirection::RIGHT, deltaTime * cameraSpeed);
 }
 
 float quadVertices[] = {
@@ -72,7 +78,7 @@ int main() {
 
   GaussianSplatParser parser;
 
-  parser.readPlyFile("../../DELL.ply");
+  parser.readPlyFile(getenv("PLY_FILE_PATH"));
 
   if (parser.splats.empty()) {
     std::cerr << "No splats found in the PLY file." << std::endl;
@@ -106,13 +112,13 @@ int main() {
   glfwSetCursorPosCallback(window, mouse_callback);
   glfwSetScrollCallback(window, scroll_callback);
 
-  unsigned int VBO;
+  GLuint VBO;
   glGenBuffers(1, &VBO);
 
-  unsigned int instanceVBO;
+  GLuint instanceVBO;
   glGenBuffers(1, &instanceVBO);
 
-  unsigned int VAO;
+  GLuint VAO;
   glGenVertexArrays(1, &VAO);
 
   glBindVertexArray(VAO);

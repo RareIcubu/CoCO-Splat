@@ -4,24 +4,29 @@
 #include <string>
 #include <vector>
 
-struct GaussianSplatRaw {
-  float x, y, z; // Position
-  float f_dc[3]; // SH color coefficients for degree 3 (9 coefficients per color
-                 // channel)
-  float f_rest[45]; // If model has more SH degree 3, we need to store the
-  //  remaining coefficients
-  float opacity; // Opacity before applying sigmoid function
-  float scale[3];
-  float rot[4]; // Quaternion rotation
-};
-
 struct GaussianSplatFP16 {
-  uint16_t pos[3];   // Position in 16-bit float 6B
-  uint16_t f_dc[3];  // SH color 6B
-  uint16_t opacity;  // Opacity before applying sigmoid function 2B
-  uint16_t scale[3]; // Scale in 16-bit float 6B
-  uint16_t rot[4];   // Quaternion rotation 8B
-}; // Total 28B per splat
+  uint16_t pos[3];
+  uint16_t f_dc[3];
+  uint16_t opacity;
+  uint16_t scale[3];
+  uint16_t rot[4];
+}; // Everything: 28 bytes
+
+struct PLYHeaderLayout {
+  int pos[3] = {-1, -1, -1};
+  int f_dc[3] = {-1, -1, -1};
+  int opacity = -1;
+  int scale[3] = {-1, -1, -1};
+  int rot[4] = {-1, -1, -1, -1};
+  size_t floatsPerVertex = 0;
+
+  bool isValid() const {
+    return pos[0] >= 0 && pos[1] >= 0 && pos[2] >= 0 && f_dc[0] >= 0 &&
+           f_dc[1] >= 0 && f_dc[2] >= 0 && opacity >= 0 && scale[0] >= 0 &&
+           scale[1] >= 0 && scale[2] >= 0 && rot[0] >= 0 && rot[1] >= 0 &&
+           rot[2] >= 0 && rot[3] >= 0 && floatsPerVertex >= 14;
+  }
+};
 
 class GaussianSplatParser {
 public:
