@@ -5,6 +5,8 @@ project(CoCO-Splat LANGUAGES CXX C CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(CMAKE_CUDA_ARCHITECTURES 75)
+
 find_package(OpenMP REQUIRED)
 
 find_package(glfw3 3.3 REQUIRED)
@@ -12,6 +14,8 @@ find_package(glfw3 3.3 REQUIRED)
 find_package(OpenGL REQUIRED)
 
 find_package(glm REQUIRED)
+
+find_package(CUDAToolkit REQUIRED)
 
 set(TARGET_NAME CoCO-Splat)
 
@@ -26,6 +30,7 @@ target_sources(${TARGET_NAME} PRIVATE
     camera.cpp
     parser.h
     parser.cpp
+    sorter.cu
 )
 
 target_include_directories(${TARGET_NAME} PRIVATE
@@ -37,4 +42,5 @@ target_link_libraries(${TARGET_NAME} PRIVATE
     OpenGL::GL
     glm::glm
     OpenMP::OpenMP_CXX
+    CUDA::cudart
 )

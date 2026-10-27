@@ -12,6 +12,7 @@
 #include <glm/trigonometric.hpp>
 #include <iostream>
 #include <math.h>
+#include <sorter.h>
 
 Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
 
@@ -19,7 +20,7 @@ float deltaTime = 0.0f; // Time between current frame and last frame
 float lastFrame = 0.0f; // Time of last frame
 float cameraSpeed = 0.0f;
 
-float lastX = 400, lastY = 300;
+float lastX = 1920.0f / 2.0f, lastY = 1080.0f / 2.0f;
 bool firstMouse = true;
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
@@ -78,7 +79,10 @@ int main() {
 
   GaussianSplatParser parser;
 
-  parser.readPlyFile(getenv("PLY_FILE_PATH"));
+  const char *envPath = std::getenv("PLY_FILE_PATH");
+  std::string filename = envPath ? envPath : "../../DELL.ply";
+
+  parser.readPlyFile(filename);
 
   if (parser.splats.empty()) {
     std::cerr << "No splats found in the PLY file." << std::endl;
@@ -106,25 +110,19 @@ int main() {
     return -1;
   }
 
-  glViewport(0, 0, 800, 600);
+  glViewport(0, 0, 1920, 1080);
   glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
   glfwSetCursorPosCallback(window, mouse_callback);
   glfwSetScrollCallback(window, scroll_callback);
 
-  GLuint VBO;
+  unsigned int VBO;
   glGenBuffers(1, &VBO);
 
-  GLuint instanceVBO;
-  glGenBuffers(1, &instanceVBO);
-
-  GLuint VAO;
+  unsigned int VAO;
   glGenVertexArrays(1, &VAO);
 
   glBindVertexArray(VAO);
-
-  // unsigned int EBO;
-  // glGenBuffers(1, &EBO);
 
   glBindBuffer(GL_ARRAY_BUFFER, VBO);
   glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices,
@@ -132,63 +130,59 @@ int main() {
 
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
-  // instance VBO (optimized with FP16 - 28B for splat)
-  glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-  glBufferData(GL_ARRAY_BUFFER,
+
+  // Static SSBO for splats
+  unsigned int splatSSBO;
+  glGenBuffers(1, &splatSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, splatSSBO);
+  glBufferData(GL_SHADER_STORAGE_BUFFER,
                parser.splats.size() * sizeof(GaussianSplatFP16),
                parser.splats.data(), GL_STATIC_DRAW);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, splatSSBO);
 
   parser.splats.clear();
   parser.splats.shrink_to_fit();
 
-  // Atribute 1: position (3x GL_HALF_FLOAT)
-  glEnableVertexAttribArray(1);
-  glVertexAttribPointer(1, 3, GL_HALF_FLOAT, GL_FALSE,
-                        sizeof(GaussianSplatFP16),
-                        (void *)offsetof(GaussianSplatFP16, pos));
-  glVertexAttribDivisor(1, 1);
-  // Atribute 2: Base color SH0 (f_dc[3])
-  glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 3, GL_HALF_FLOAT, GL_FALSE,
-                        sizeof(GaussianSplatFP16),
-                        (void *)offsetof(GaussianSplatFP16, f_dc));
-  glVertexAttribDivisor(2, 1);
-  // Attribute 3: Opacity
-  glEnableVertexAttribArray(3);
-  glVertexAttribPointer(3, 1, GL_HALF_FLOAT, GL_FALSE,
-                        sizeof(GaussianSplatFP16),
-                        (void *)offsetof(GaussianSplatFP16, opacity));
+  // Dynamic SSBO for sorted indices
+  unsigned int indexSSBO;
+  glGenBuffers(1, &indexSSBO);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexSSBO);
+  glBufferData(GL_SHADER_STORAGE_BUFFER,
+               static_cast<size_t>(parser.vertexCount) * sizeof(unsigned int),
+               nullptr, GL_DYNAMIC_DRAW);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, indexSSBO);
 
-  glVertexAttribDivisor(3, 1);
-  // Attribute 4: Scale
-  glEnableVertexAttribArray(4);
-  glVertexAttribPointer(4, 3, GL_HALF_FLOAT, GL_FALSE,
-                        sizeof(GaussianSplatFP16),
-                        (void *)offsetof(GaussianSplatFP16, scale));
-  glVertexAttribDivisor(4, 1);
+  CudaSorter sorter;
+  initCudaSorter(sorter, splatSSBO, indexSSBO, parser.vertexCount);
 
-  // Attribute 5: Quaternion rotation
-  glEnableVertexAttribArray(5);
-  glVertexAttribPointer(5, 4, GL_HALF_FLOAT, GL_FALSE,
-                        sizeof(GaussianSplatFP16),
-                        (void *)offsetof(GaussianSplatFP16, rot));
-  glVertexAttribDivisor(5, 1);
+  // unsigned int EBO;
+  // glGenBuffers(1, &EBO);
+
+  // instance VBO (optimized with FP16 - 28B for splat)
+  // glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
 
   Shader ourShader("../shaders/shader.vert", "../shaders/shader.frag");
 
   glDisable(GL_DEPTH_TEST);
+  glDepthMask(GL_FALSE);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  glm::mat4 lastView(0.0f);
 
   while (!glfwWindowShouldClose(window)) {
     processInput(window);
 
+    int fbWidth, fbHeight;
+    glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+    if (fbWidth == 0 || fbHeight == 0) {
+      glfwPollEvents();
+      continue;
+    }
+
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Rotate 90 degress around the Z axis
-    glm::quat myRotation =
-        glm::angleAxis(glm::radians(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     // Convert the quaternion to model matrix
     glm::mat4 model =
         glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, -1.0f, -1.0f));
@@ -196,6 +190,13 @@ int main() {
     glm::mat4 view = glm::mat4(1.0f);
     // Translate the view matrix to move the scene backwards (so we can see it)
     view = camera.GetViewMatrix();
+
+    glm::mat4 viewModel = view * model;
+    if (viewModel != lastView) {
+      sortSplatsCuda(sorter, glm::value_ptr(viewModel));
+      lastView = viewModel;
+    }
+
     // Create projection matrix
     glm::mat4 projection;
     // Create the projection matrix using perspective projection with a 45
@@ -214,18 +215,25 @@ int main() {
     int projectionLoc = glGetUniformLocation(ourShader.ID, "projection");
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
+    int viewportLoc = glGetUniformLocation(ourShader.ID, "viewport");
+    glUniform2f(viewportLoc, static_cast<float>(fbWidth),
+                static_cast<float>(fbHeight));
+
     float currentFrame = glfwGetTime();
     deltaTime = currentFrame - lastFrame;
     lastFrame = currentFrame;
 
     glBindVertexArray(VAO);
     // glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, parser.vertexCount);
     glBindVertexArray(0);
     glfwSwapBuffers(window);
     glfwPollEvents();
   }
-
+  freeCudaSorter(sorter);
+  glDeleteBuffers(1, &splatSSBO);
+  glDeleteBuffers(1, &indexSSBO);
   glfwTerminate();
   return 0;
 }

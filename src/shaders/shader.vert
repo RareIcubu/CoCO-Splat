@@ -1,25 +1,50 @@
 #version 460 core
-layout (location=0) in vec2 aQuadPos;
-layout (location=1) in vec3 aInstancePos;
-layout (location=2) in vec3 aInstanceColor;
-layout (location=3) in float aInstanceOpacity;
-layout (location=4) in vec3 aInstanceScale;
-layout (location=5) in vec4 aInstanceRot;
+
+layout(location = 0) in vec2 aQuadPos;
+
+//Binding 0: Static buffer for splats
+layout(std430, binding = 0) readonly buffer SplatBuffer {
+  uint splatRaw[];
+};
+
+//Binding 1: Sorted splat indeces
+
+layout(std430, binding = 1) readonly buffer SplatIndexBuffer {
+  uint sortedIndecies[];
+};
 
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform vec2 viewport;
+
 
 out vec3 fColor;
-out vec2 uv;
 out float fOpacity;
+out vec2 uv;
 
 const float SH_C0 = 0.28209479177387814f;
-const vec2 viewport = vec2(800.0f, 600.0f);
 
 void main()
 {
   // 1. Splat center transformation in view space
+  uint splatIdx = sortedIndecies[gl_InstanceID];
+  uint base = splatIdx * 7u;
+
+  vec2 u0 = unpackHalf2x16(splatRaw[base + 0u]); // pos.x, pos.y
+  vec2 u1 = unpackHalf2x16(splatRaw[base + 1u]); // pos.z, f_dc.r
+  vec2 u2 = unpackHalf2x16(splatRaw[base + 2u]); // f_dc.g, f_dc.b
+  vec2 u3 = unpackHalf2x16(splatRaw[base + 3u]); // opacity, scale.x
+  vec2 u4 = unpackHalf2x16(splatRaw[base + 4u]); // scale.y, scale.z
+  vec2 u5 = unpackHalf2x16(splatRaw[base + 5u]); // rot.0, rot.1
+  vec2 u6 = unpackHalf2x16(splatRaw[base + 6u]); // rot.2, rot.3
+                                                 
+  vec3 aInstancePos = vec3(u0.x, u0.y, u1.x);
+  vec3 aInstanceColor = vec3(u1.y, u2.x, u2.y);
+  float aInstanceOpacity = u3.x;
+  vec3 aInstanceScale = vec3(u3.y, u4.x, u4.y);
+  vec4 aInstanceRot = vec4(u5.x, u5.y, u6.x, u6.y);
+
   vec4 p_view = view * model * vec4(aInstancePos, 1.0f);
 
   // 2. Discard splats that are behind the camera
@@ -30,7 +55,7 @@ void main()
 
   //Discard giant splats that are too far away
   float maxLogScale = max(aInstanceScale.x, max(aInstanceScale.y, aInstanceScale.z));
-  if (maxLogScale > -3.0f){
+  if (maxLogScale > -1.0f){
     gl_Position = vec4(0.0f, 0.0f, 2.0f, 1.0f);
     return;
   }
@@ -107,7 +132,7 @@ void main()
 
   vec4 p_clip = projection * p_view;
   vec2 ndcCenter = p_clip.xy / p_clip.w;
-  vec2 pixelOffest = (aQuadPos.x * v1 + aQuadPos.y * v2) * 2.0f;
+  vec2 pixelOffest = (aQuadPos.x * v1 + aQuadPos.y * v2) * cuttoffRadius;
   vec2 ndcOffset = (pixelOffest / viewport) * 2.0f;
 
   gl_Position = vec4((ndcCenter + ndcOffset) * p_clip.w, p_clip.z, p_clip.w);
