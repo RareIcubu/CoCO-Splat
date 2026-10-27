@@ -1,61 +1,110 @@
 #include "sorter.h"
+#include <algorithm>
 #include <cub/cub.cuh>
 #include <cuda_fp16.h>
 #include <cuda_gl_interop.h>
 #include <iostream>
 
-// Kernel wyliczający głębokość w przestrzeni kamery (z_view) dla każdego splata
-__global__ void computeDepthKeysKernel(const __half *__restrict__ splatsHalf,
-                                       uint16_t *__restrict__ keysOut,
-                                       uint32_t *__restrict__ valsOut,
-                                       size_t numSplats, float r2x, float r2y,
-                                       float r2z, float r2w) {
-  size_t idx = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (idx >= numSplats)
-    return;
+__global__ void cullAndCompactKernel(
+    const __half *__restrict__ splatsHalf, uint16_t *__restrict__ keysOut,
+    uint32_t *__restrict__ valsOut, uint32_t *__restrict__ globalVisibleCount,
+    size_t numSplats, float vm2x, float vm2y, float vm2z, float vm2w, float m0,
+    float m1, float m2, float m3, float m4, float m5, float m6, float m7,
+    float m8, float m9, float m10, float m11, float m12, float m13, float m14,
+    float m15) {
+  // Szybka agregacja w pamięci współdzielonej bloku (256 wątków)
+  __shared__ uint32_t blockCount;
+  __shared__ uint32_t blockBaseOffset;
 
-  // Każdy GaussianSplatFP16 ma 28 bajtów = 14 wartości typu __half (uint16_t)
-  // Pierwsze 3 wartości to pos[0], pos[1], pos[2]
-  size_t base = idx * 14;
-  float x = __half2float(splatsHalf[base + 0]);
-  float y = __half2float(splatsHalf[base + 1]);
-  float z = __half2float(splatsHalf[base + 2]);
-
-  // Głębokość w układzie kamery: z_view = dot(viewRow2, vec4(pos, 1.0))
-  // Im dalej od kamery, tym bardziej ujemna wartość -> sortowanie rosnące daje
-  // Back-to-Front!
-
-  float z_view = r2x * x + r2y * y + r2z * z + r2w;
-
-  float depth = -z_view;
-
-  uint16_t key = 0xFFFF;
-  if (depth > 0.1f) {
-    // Mapujemy głębokość do zakresu [0, 65535] dla klucza
-    uint16_t halfBits = __half_as_ushort(__float2half(depth));
-    key = ~halfBits;
+  if (threadIdx.x == 0) {
+    blockCount = 0;
   }
+  __syncthreads();
 
-  keysOut[idx] = key;
-  valsOut[idx] = static_cast<uint32_t>(idx);
+  size_t idx = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  bool keep = false;
+  uint16_t myKey = 0;
+  uint32_t localOffset = 0;
+
+  if (idx < numSplats) {
+    size_t base = idx * 14;
+    float x = __half2float(splatsHalf[base + 0]);
+    float y = __half2float(splatsHalf[base + 1]);
+    float z = __half2float(splatsHalf[base + 2]);
+
+    // 1. Odległość od kamery (Near Plane Culling)
+    float z_view = vm2x * x + vm2y * y + vm2z * z + vm2w;
+    float depth = -z_view;
+
+    if (depth > 0.1f) {
+      // 2. Frustum Culling (czy splat mieści się na ekranie?)
+      float clipX = m0 * x + m4 * y + m8 * z + m12;
+      float clipY = m1 * x + m5 * y + m9 * z + m13;
+      float clipW = m3 * x + m7 * y + m11 * z + m15;
+
+      float limit = 1.25f * clipW; // 25% marginesu na krawędziach ekranu
+      if (clipW > 0.1f && clipX >= -limit && clipX <= limit &&
+          clipY >= -limit && clipY <= limit) {
+        // 3. Distance / Sub-pixel Culling (z tej samej linii cache L1!):
+        // Odczytujemy opacity (indeks 6) i scale (indeksy 7, 8, 9)
+        float op = __half2float(splatsHalf[base + 6]);
+        float s0 = __half2float(splatsHalf[base + 7]);
+        float s1 = __half2float(splatsHalf[base + 8]);
+        float s2 = __half2float(splatsHalf[base + 9]);
+
+        // Im dalej od kamery, tym mocniej odcinamy przezroczyste i małe splaty
+        float maxLogScale = fmaxf(s0, fmaxf(s1, s2));
+        float worldRadius = __expf(maxLogScale) * 3.0f;
+
+        // Przybliżona średnica splata w pikselach na ekranie 1080p:
+        float pixelSize = (worldRadius * 1200.0f) / depth;
+
+        // Odrzucamy splaty mniejsze niż 1.2 piksela w oddali oraz zbyt
+        // przezroczyste
+        if (pixelSize >= 1.2f && op >= (-3.5f + 0.15f * depth)) {
+          keep = true;
+          uint16_t halfBits = __half_as_ushort(__float2half(depth));
+          myKey = ~halfBits; // Back-to-Front
+          localOffset = atomicAdd(&blockCount, 1u);
+        }
+      }
+    }
+  }
+  __syncthreads();
+
+  // Jeden atomowy zapis na cały blok 256 wątków!
+  if (threadIdx.x == 0 && blockCount > 0) {
+    blockBaseOffset = atomicAdd(globalVisibleCount, blockCount);
+  }
+  __syncthreads();
+
+  // Zapisujemy tylko widoczne splaty w zwartej tablicy (Stream Compaction)
+  if (keep) {
+    uint32_t finalIdx = blockBaseOffset + localOffset;
+    keysOut[finalIdx] = myKey;
+    valsOut[finalIdx] = static_cast<uint32_t>(idx);
+  }
 }
 
-void initCudaSorter(CudaSorter &s, GLuint splatSSBO, GLuint indexSSBO,
-                    size_t count) {
+void initCudaSorter(CudaSorter &s, unsigned int splatSSBO,
+                    unsigned int indexSSBO, size_t count) {
   s.numSplats = count;
 
-  // 1. Rejestrujemy bufory OpenGL w przestrzeni adresowej CUDA
   cudaGraphicsGLRegisterBuffer(&s.cudaSplatRes, splatSSBO,
                                cudaGraphicsRegisterFlagsReadOnly);
   cudaGraphicsGLRegisterBuffer(&s.cudaIndexRes, indexSSBO,
                                cudaGraphicsRegisterFlagsWriteDiscard);
 
-  // 2. Alokujemy tablice pomocnicze dla kluczy i indeksów wejściowych
+  size_t num_bytes = 0;
+  cudaGraphicsMapResources(1, &s.cudaSplatRes, 0);
+  cudaGraphicsResourceGetMappedPointer((void **)&s.d_splats_mapped, &num_bytes,
+                                       s.cudaSplatRes);
+
+  cudaMalloc(&s.d_visible_count, sizeof(uint32_t));
   cudaMalloc(&s.d_keys_in, count * sizeof(uint16_t));
   cudaMalloc(&s.d_keys_out, count * sizeof(uint16_t));
   cudaMalloc(&s.d_vals_in, count * sizeof(uint32_t));
 
-  // 3. Pytamy CUB, ile pamięci tymczasowej potrzebuje dla tej liczby splatów
   s.temp_storage_bytes = 0;
   uint32_t *dummy_vals_out = nullptr;
   cub::DeviceRadixSort::SortPairs(nullptr, s.temp_storage_bytes, s.d_keys_in,
@@ -63,57 +112,61 @@ void initCudaSorter(CudaSorter &s, GLuint splatSSBO, GLuint indexSSBO,
                                   static_cast<int>(count));
 
   cudaMalloc(&s.d_temp_storage, s.temp_storage_bytes);
-  std::cout << "[CUDA] Sorter initialized. CUB temp buffer: "
+  std::cout << "[CUDA] Compact Sorter initialized. CUB temp buffer: "
             << (s.temp_storage_bytes / (1024.0 * 1024.0)) << " MiB"
             << std::endl;
 }
 
-void sortSplatsCuda(CudaSorter &s, const float *v) {
+int sortSplatsCuda(CudaSorter &s, const float *vm, const float *mvp) {
   if (s.numSplats == 0)
-    return;
+    return 0;
 
-  // 1. Mapujemy oba zasoby OpenGL (zero kopiowania przez CPU!)
-  cudaGraphicsResource *resources[2] = {s.cudaSplatRes, s.cudaIndexRes};
-  cudaGraphicsMapResources(2, resources, 0);
+  // 1. Zerujemy licznik widocznych splatów
+  cudaMemsetAsync(s.d_visible_count, 0, sizeof(uint32_t));
 
-  const __half *d_splats = nullptr;
-  uint32_t *d_sorted_indices = nullptr;
-  size_t num_bytes = 0;
-
-  cudaGraphicsResourceGetMappedPointer((void **)&d_splats, &num_bytes,
-                                       s.cudaSplatRes);
-  cudaGraphicsResourceGetMappedPointer((void **)&d_sorted_indices, &num_bytes,
-                                       s.cudaIndexRes);
-
-  // 2. Wyciągamy 3. wiersz macierzy widoku (w GLM kolumnowym: indeksy 2, 6, 10,
-  // 14)
-  float r2x = v[2];
-  float r2y = v[6];
-  float r2z = v[10];
-  float r2w = v[14];
-
-  // 3. Odpalamy kernel liczący klucze głębokości
+  // 2. Odpalamy Frustum + Sub-pixel Culling + Stream Compaction
   int threadsPerBlock = 256;
   int blocksPerGrid =
       static_cast<int>((s.numSplats + threadsPerBlock - 1) / threadsPerBlock);
 
-  computeDepthKeysKernel<<<blocksPerGrid, threadsPerBlock>>>(
-      d_splats, s.d_keys_in, s.d_vals_in, s.numSplats, r2x, r2y, r2z, r2w);
+  cullAndCompactKernel<<<blocksPerGrid, threadsPerBlock>>>(
+      static_cast<const __half *>(s.d_splats_mapped), s.d_keys_in, s.d_vals_in,
+      s.d_visible_count, s.numSplats, vm[2], vm[6], vm[10], vm[14], mvp[0],
+      mvp[1], mvp[2], mvp[3], mvp[4], mvp[5], mvp[6], mvp[7], mvp[8], mvp[9],
+      mvp[10], mvp[11], mvp[12], mvp[13], mvp[14], mvp[15]);
 
-  // 4. Sortujemy pary (klucz -> indeks) bezpośrednio do bufora indexSSBO!
+  // 3. Odczytujemy, ile splatów przetrwało selekcję
+  uint32_t visibleCount = 0;
+  cudaMemcpy(&visibleCount, s.d_visible_count, sizeof(uint32_t),
+             cudaMemcpyDeviceToHost);
+
+  if (visibleCount == 0)
+    return 0;
+
+  // 4. Sortujemy TYLKO widoczne splaty (visibleCount zamiast 15 milionów!)
+  cudaGraphicsMapResources(1, &s.cudaIndexRes, 0);
+  uint32_t *d_sorted_indices = nullptr;
+  size_t num_bytes = 0;
+  cudaGraphicsResourceGetMappedPointer((void **)&d_sorted_indices, &num_bytes,
+                                       s.cudaIndexRes);
+
   cub::DeviceRadixSort::SortPairs(
       s.d_temp_storage, s.temp_storage_bytes, s.d_keys_in, s.d_keys_out,
-      s.d_vals_in, d_sorted_indices, static_cast<int>(s.numSplats));
+      s.d_vals_in, d_sorted_indices, static_cast<int>(visibleCount));
 
-  // 5. Odmapowujemy zasoby, oddając kontrolę potokowi OpenGL
-  cudaGraphicsUnmapResources(2, resources, 0);
+  cudaGraphicsUnmapResources(1, &s.cudaIndexRes, 0);
+  return static_cast<int>(visibleCount);
 }
 
 void freeCudaSorter(CudaSorter &s) {
-  if (s.cudaSplatRes)
+  if (s.cudaSplatRes) {
+    cudaGraphicsUnmapResources(1, &s.cudaSplatRes, 0);
     cudaGraphicsUnregisterResource(s.cudaSplatRes);
+  }
   if (s.cudaIndexRes)
     cudaGraphicsUnregisterResource(s.cudaIndexRes);
+  if (s.d_visible_count)
+    cudaFree(s.d_visible_count);
   if (s.d_keys_in)
     cudaFree(s.d_keys_in);
   if (s.d_keys_out)

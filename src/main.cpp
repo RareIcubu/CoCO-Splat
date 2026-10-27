@@ -4,12 +4,14 @@
 #include "parser.h"
 #include "shader.h"
 #include <GLFW/glfw3.h>
+#include <chrono>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/trigonometric.hpp>
+#include <iomanip>
 #include <iostream>
 #include <math.h>
 #include <sorter.h>
@@ -102,6 +104,7 @@ int main() {
   }
   // GLFW settings
   glfwMakeContextCurrent(window);
+  glfwSwapInterval(0); // Disable V-Sync for maximum performance
   glfwSetInputMode(window, GLFW_STICKY_KEYS, 1);
   glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
@@ -169,6 +172,12 @@ int main() {
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   glm::mat4 lastView(0.0f);
+  double statsTime = glfwGetTime();
+  int frameCounter = 0;
+  double lastSortsMs = 0.0;
+
+  glm::mat4 lastMvp(0.0f);
+  int visibleSplats = 0;
 
   while (!glfwWindowShouldClose(window)) {
     processInput(window);
@@ -191,12 +200,6 @@ int main() {
     // Translate the view matrix to move the scene backwards (so we can see it)
     view = camera.GetViewMatrix();
 
-    glm::mat4 viewModel = view * model;
-    if (viewModel != lastView) {
-      sortSplatsCuda(sorter, glm::value_ptr(viewModel));
-      lastView = viewModel;
-    }
-
     // Create projection matrix
     glm::mat4 projection;
     // Create the projection matrix using perspective projection with a 45
@@ -204,6 +207,17 @@ int main() {
     // plane of 0.1 and 100.0
     projection = glm::perspective(glm::radians(camera.Zoom), 800.0f / 600.0f,
                                   0.1f, 1000.0f);
+    glm::mat4 viewModel = view * model;
+    glm::mat4 mvp = projection * viewModel;
+
+    if (mvp != lastMvp) {
+      auto t0 = std::chrono::high_resolution_clock::now();
+      visibleSplats = sortSplatsCuda(sorter, glm::value_ptr(viewModel),
+                                     glm::value_ptr(mvp));
+      auto t1 = std::chrono::high_resolution_clock::now();
+      lastSortsMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+      lastMvp = mvp;
+    }
 
     ourShader.use();
 
@@ -225,10 +239,24 @@ int main() {
 
     glBindVertexArray(VAO);
     // glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-
-    glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, parser.vertexCount);
+    if (visibleSplats > 0) {
+      glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, parser.vertexCount);
+    }
     glBindVertexArray(0);
     glfwSwapBuffers(window);
+
+    frameCounter++;
+    double now = glfwGetTime();
+    if (now - statsTime >= 0.5) {
+      double avgFrameMs = ((now - statsTime) * 1000.0) / frameCounter;
+      double fps = frameCounter / (now - statsTime);
+      std::cout << "\r[PERF] FPS: " << std::fixed << std::setprecision(1) << fps
+                << "| Frame: " << std::setprecision(2) << avgFrameMs << " ms"
+                << "| CUDA Sort: " << lastSortsMs << "ms     "
+                << "| Visible: " << visibleSplats << std::flush;
+      frameCounter = 0;
+      statsTime = now;
+    }
     glfwPollEvents();
   }
   freeCudaSorter(sorter);

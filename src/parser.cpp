@@ -8,8 +8,8 @@
 #include <sstream>
 #include <vector>
 
-float opacityThreshold = -2.0f; // Threshold for opacity pruning
-float scaleThreshold = -2.5f;   // Threshold for scale pruning
+float opacityThreshold = -4.0f; // Threshold for opacity pruning
+float scaleThreshold = -1.5f;   // Threshold for scale pruning
 
 void GaussianSplatParser::readPlyFile(const std::string &filename) {
   // Reading the PLY file is a two phase process:

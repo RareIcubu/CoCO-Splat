@@ -7,6 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_CUDA_ARCHITECTURES 75)
 
+set(CMAKE_CUDA_RUNTIME_LIBRARY "Static")
+
 find_package(OpenMP REQUIRED)
 
 find_package(glfw3 3.3 REQUIRED)
@@ -42,5 +44,5 @@ target_link_libraries(${TARGET_NAME} PRIVATE
     OpenGL::GL
     glm::glm
     OpenMP::OpenMP_CXX
-    CUDA::cudart
+    CUDA::cudart_static
 )
