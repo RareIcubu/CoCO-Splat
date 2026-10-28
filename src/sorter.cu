@@ -42,30 +42,51 @@ __global__ void cullAndCompactKernel(
       float clipY = m1 * x + m5 * y + m9 * z + m13;
       float clipW = m3 * x + m7 * y + m11 * z + m15;
 
-      float limit = 1.25f * clipW; // 25% marginesu na krawędziach ekranu
+      float limit = 1.2f * clipW;
       if (clipW > 0.1f && clipX >= -limit && clipX <= limit &&
           clipY >= -limit && clipY <= limit) {
-        // 3. Distance / Sub-pixel Culling (z tej samej linii cache L1!):
-        // Odczytujemy opacity (indeks 6) i scale (indeksy 7, 8, 9)
         float op = __half2float(splatsHalf[base + 6]);
-        float s0 = __half2float(splatsHalf[base + 7]);
-        float s1 = __half2float(splatsHalf[base + 8]);
-        float s2 = __half2float(splatsHalf[base + 9]);
 
-        // Im dalej od kamery, tym mocniej odcinamy przezroczyste i małe splaty
-        float maxLogScale = fmaxf(s0, fmaxf(s1, s2));
-        float worldRadius = __expf(maxLogScale) * 3.0f;
+        // Próg rośnie z odległością, ale ma sufit na 0.0f (50% alfa),
+        // więc z daleka NIGDY nie wytnie zielonego laminatu!
+        float opThreshold = fminf(-2.0f + 0.1f * depth, 0.0f);
 
-        // Przybliżona średnica splata w pikselach na ekranie 1080p:
-        float pixelSize = (worldRadius * 1200.0f) / depth;
+        if (op > opThreshold) {
+          float s0 = __half2float(splatsHalf[base + 7]);
+          float s1 = __half2float(splatsHalf[base + 8]);
+          float s2 = __half2float(splatsHalf[base + 9]);
 
-        // Odrzucamy splaty mniejsze niż 1.2 piksela w oddali oraz zbyt
-        // przezroczyste
-        if (pixelSize >= 1.2f && op >= (-3.5f + 0.15f * depth)) {
-          keep = true;
-          uint16_t halfBits = __half_as_ushort(__float2half(depth));
-          myKey = ~halfBits; // Back-to-Front
-          localOffset = atomicAdd(&blockCount, 1u);
+          float maxLogScale = fmaxf(s0, fmaxf(s1, s2));
+          float worldRadius = __expf(maxLogScale) * 3.0f;
+          float pixelSize = (worldRadius * 1080.0f) / clipW;
+
+          // TWARDE ODCIĘCIE SUB-PIKSELI: wszystko poniżej 1.3 px wylatuje w
+          // 100%!
+          if (pixelSize >= 1.1f) {
+            bool lodPass = true;
+
+            // Dla splatów w przedziale 1.3 px - 3.5 px przerzedzamy je
+            // stochastycznie
+            if (pixelSize < 3.5f) {
+              float ratio = (pixelSize - 1.3f) / (3.5f - 1.3f);
+              float keepProb = ratio * ratio;
+
+              uint32_t hash =
+                  static_cast<uint32_t>(idx) * 747796405u + 2891336453u;
+              hash = ((hash >> ((hash >> 28u) + 4u)) ^ hash) * 277803737u;
+              float rand01 =
+                  static_cast<float>(hash & 0xFFFFu) * (1.0f / 65536.0f);
+
+              lodPass = (rand01 < keepProb);
+            }
+
+            if (lodPass) {
+              keep = true;
+              uint16_t halfBits = __half_as_ushort(__float2half(depth));
+              myKey = ~halfBits;
+              localOffset = atomicAdd(&blockCount, 1u);
+            }
+          }
         }
       }
     }
