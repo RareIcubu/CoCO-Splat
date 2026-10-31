@@ -166,6 +166,11 @@ int main() {
 
   Shader ourShader("../shaders/shader.vert", "../shaders/shader.frag");
 
+  const int modelLoc = glGetUniformLocation(ourShader.ID, "model");
+  const int viewLoc = glGetUniformLocation(ourShader.ID, "view");
+  const int projectionLoc = glGetUniformLocation(ourShader.ID, "projection");
+  const int viewportLoc = glGetUniformLocation(ourShader.ID, "viewport");
+  
   glDisable(GL_DEPTH_TEST);
   glDepthMask(GL_FALSE);
   glEnable(GL_BLEND);
@@ -205,7 +210,8 @@ int main() {
     // Create the projection matrix using perspective projection with a 45
     // degreee field of view, an aspect ration of 800/600, and a near and far
     // plane of 0.1 and 100.0
-    projection = glm::perspective(glm::radians(camera.Zoom), 800.0f / 600.0f,
+    float aspect = static_cast<float>(fbWidth) / static_cast<float>(fbHeight);
+    projection = glm::perspective(glm::radians(camera.Zoom), aspect,
                                   0.1f, 1000.0f);
     glm::mat4 viewModel = view * model;
     glm::mat4 mvp = projection * viewModel;
@@ -222,14 +228,10 @@ int main() {
     ourShader.use();
 
     // glUniform4f(vertexColorLocation, 0.0f, greenValue, 0.0f, 1.0f);
-    int modelLoc = glGetUniformLocation(ourShader.ID, "model");
     glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-    int viewLoc = glGetUniformLocation(ourShader.ID, "view");
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-    int projectionLoc = glGetUniformLocation(ourShader.ID, "projection");
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
-    int viewportLoc = glGetUniformLocation(ourShader.ID, "viewport");
     glUniform2f(viewportLoc, static_cast<float>(fbWidth),
                 static_cast<float>(fbHeight));
 
@@ -240,7 +242,7 @@ int main() {
     glBindVertexArray(VAO);
     // glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
     if (visibleSplats > 0) {
-      glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, parser.vertexCount);
+      glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, visibleSplats);
     }
     glBindVertexArray(0);
     glfwSwapBuffers(window);
