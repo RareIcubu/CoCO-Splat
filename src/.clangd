@@ -1,12 +1,19 @@
 CompileFlags:
+  CompilationDatabase: build
+
+---
+If:
+  PathMatch: '.*\.(cu|cuh)$'
+CompileFlags:
+  Compiler: clang++
   Remove:
     - -forward-unknown-to-host-compiler
-    - --generate-code*
-    - --options-file
-    - -rdc=*
-    - -Xcompiler*
+    - --generate-code=*
+    - -isystem=*
+    - -x
   Add:
     - -xcuda
-    - --cuda-path=/usr/local/cuda-12.1
+    - --cuda-path=/opt/cuda
     - --cuda-gpu-arch=sm_75
-    - -Wno-unknown-cuda-version
+    - -isystem
+    - /opt/cuda/include/cccl

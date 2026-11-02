@@ -259,7 +259,7 @@ int main() {
       std::cout << "\r[PERF] FPS: " << std::fixed << std::setprecision(1) << fps
                 << "| Frame: " << std::setprecision(2) << avgFrameMs << " ms"
                 << "| CUDA Sort: " << lastSortsMs << "ms     "
-                << "| Visible: " << visibleSplats << std::flush;
+                << "| Visible: " << visibleSplats << "      " << std::flush;
       frameCounter = 0;
       statsTime = now;
     }
