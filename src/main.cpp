@@ -170,13 +170,18 @@ int main() {
   const int viewLoc = glGetUniformLocation(ourShader.ID, "view");
   const int projectionLoc = glGetUniformLocation(ourShader.ID, "projection");
   const int viewportLoc = glGetUniformLocation(ourShader.ID, "viewport");
-  
+
+  glm::mat4 model = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, -1.0f, -1.0f));
+
+  ourShader.use();
+
+  glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
   glDisable(GL_DEPTH_TEST);
   glDepthMask(GL_FALSE);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-  glm::mat4 lastView(0.0f);
   double statsTime = glfwGetTime();
   int frameCounter = 0;
   double lastSortsMs = 0.0;
@@ -184,10 +189,16 @@ int main() {
   glm::mat4 lastMvp(0.0f);
   int visibleSplats = 0;
 
+  lastFrame = glfwGetTime();
+
   while (!glfwWindowShouldClose(window)) {
     processInput(window);
 
+    float currentFrame = glfwGetTime();
+    deltaTime = currentFrame - lastFrame;
+    lastFrame = currentFrame;
     int fbWidth, fbHeight;
+
     glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
     if (fbWidth == 0 || fbHeight == 0) {
       glfwPollEvents();
@@ -198,8 +209,6 @@ int main() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // Convert the quaternion to model matrix
-    glm::mat4 model =
-        glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, -1.0f, -1.0f));
     // Create view matrix
     glm::mat4 view = glm::mat4(1.0f);
     // Translate the view matrix to move the scene backwards (so we can see it)
@@ -211,8 +220,8 @@ int main() {
     // degreee field of view, an aspect ration of 800/600, and a near and far
     // plane of 0.1 and 100.0
     float aspect = static_cast<float>(fbWidth) / static_cast<float>(fbHeight);
-    projection = glm::perspective(glm::radians(camera.Zoom), aspect,
-                                  0.1f, 1000.0f);
+    projection =
+        glm::perspective(glm::radians(camera.Zoom), aspect, 0.1f, 1000.0f);
     glm::mat4 viewModel = view * model;
     glm::mat4 mvp = projection * viewModel;
 
@@ -228,16 +237,11 @@ int main() {
     ourShader.use();
 
     // glUniform4f(vertexColorLocation, 0.0f, greenValue, 0.0f, 1.0f);
-    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
     glUniform2f(viewportLoc, static_cast<float>(fbWidth),
                 static_cast<float>(fbHeight));
-
-    float currentFrame = glfwGetTime();
-    deltaTime = currentFrame - lastFrame;
-    lastFrame = currentFrame;
 
     glBindVertexArray(VAO);
     // glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
@@ -264,6 +268,8 @@ int main() {
   freeCudaSorter(sorter);
   glDeleteBuffers(1, &splatSSBO);
   glDeleteBuffers(1, &indexSSBO);
+  glDeleteBuffers(1, &VBO);
+  glDeleteVertexArrays(1, &VAO);
   glfwTerminate();
   return 0;
 }
