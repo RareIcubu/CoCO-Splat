@@ -227,8 +227,9 @@ int main() {
 
     if (mvp != lastMvp) {
       auto t0 = std::chrono::high_resolution_clock::now();
+      float focal = projection[1][1] * (static_cast<float>(fbHeight) / 0.5f);
       visibleSplats = sortSplatsCuda(sorter, glm::value_ptr(viewModel),
-                                     glm::value_ptr(mvp));
+                                     glm::value_ptr(mvp), focal);
       auto t1 = std::chrono::high_resolution_clock::now();
       lastSortsMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
       lastMvp = mvp;

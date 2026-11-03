@@ -13,10 +13,10 @@ constexpr bool ENABLE_LOD_CULLING = true;
 __global__ void cullAndCompactKernel(
     const __half *__restrict__ splatsHalf, uint16_t *__restrict__ keysOut,
     uint32_t *__restrict__ valsOut, uint32_t *__restrict__ globalVisibleCount,
-    size_t numSplats, float vm2x, float vm2y, float vm2z, float vm2w, float m0,
-    float m1, float m2, float m3, float m4, float m5, float m6, float m7,
-    float m8, float m9, float m10, float m11, float m12, float m13, float m14,
-    float m15) {
+    size_t numSplats, float focal, float vm2x, float vm2y, float vm2z,
+    float vm2w, float m0, float m1, float m2, float m3, float m4, float m5,
+    float m6, float m7, float m8, float m9, float m10, float m11, float m12,
+    float m13, float m14, float m15) {
   __shared__ uint32_t blockCount;
   __shared__ uint32_t blockBaseOffset;
 
@@ -59,11 +59,10 @@ __global__ void cullAndCompactKernel(
       }
 
       if (frustumPass) {
-        // Opacity culling.
 
         // Obliczenie rozmiaru splata.
         float worldRadius = __half2float(splatsHalf[base + 3]);
-        float pixelSize = (worldRadius * 1080.0f) / clipW;
+        float pixelSize = (worldRadius * focal) / clipW;
 
         // Hard pixel-size culling.
         bool pixelPass = true;
@@ -155,7 +154,8 @@ void initCudaSorter(CudaSorter &s, unsigned int splatSSBO,
             << std::endl;
 }
 
-int sortSplatsCuda(CudaSorter &s, const float *vm, const float *mvp) {
+int sortSplatsCuda(CudaSorter &s, const float *vm, const float *mvp,
+                   float focal) {
   if (s.numSplats == 0)
     return 0;
 
@@ -178,7 +178,7 @@ int sortSplatsCuda(CudaSorter &s, const float *vm, const float *mvp) {
 
   cullAndCompactKernel<<<blocksPerGrid, threadsPerBlock>>>(
       static_cast<const __half *>(s.d_splats_mapped), s.d_keys_in, s.d_vals_in,
-      s.d_visible_count, s.numSplats,
+      s.d_visible_count, s.numSplats, focal,
 
       vm[2], vm[6], vm[10], vm[14],
 

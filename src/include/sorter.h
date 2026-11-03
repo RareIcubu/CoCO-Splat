@@ -25,7 +25,7 @@ void initCudaSorter(CudaSorter &s, unsigned int splatSSBO,
                     unsigned int indexSSBO, size_t count);
 
 int sortSplatsCuda(CudaSorter &s, const float *viewMatrix,
-                   const float *mvpMatrix);
+                   const float *mvpMatrix, float focal);
 
 void freeCudaSorter(CudaSorter &s);
 
