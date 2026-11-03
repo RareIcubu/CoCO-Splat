@@ -54,11 +54,11 @@ void main()
   }
 
   //Discard giant splats that are too far away
-  float maxLogScale = max(aInstanceScale.x, max(aInstanceScale.y, aInstanceScale.z));
-  if (maxLogScale > -1.0f){
-    gl_Position = vec4(0.0f, 0.0f, 2.0f, 1.0f);
-    return;
-  }
+//float maxLogScale = max(aInstanceScale.x, max(aInstanceScale.y, aInstanceScale.z));
+//if (maxLogScale > -1.0f){
+//  gl_Position = vec4(0.0f, 0.0f, 2.0f, 1.0f);
+//  return;
+//}
 
   // 3. Create scale matrix S 
   vec3 s = exp(aInstanceScale);
