@@ -1,16 +1,17 @@
 #ifndef PARSER_H
-// Create parser class for .ply files for 3D Gaussian Splatting
+#define PARSER_H
+
 #include <cstdint>
 #include <string>
 #include <vector>
 
 struct GaussianSplatFP16 {
-  uint16_t pos[3];
-  uint16_t f_dc[3];
-  uint16_t opacity;
-  uint16_t scale[3];
-  uint16_t rot[4];
-}; // Everything: 28 bytes
+  uint16_t pos[3];          // 3 x FP16 (2 bytes each) = 6 bytes
+  uint16_t effectiveRadius; // 1 x FP16 (2 bytes) = 2 bytes
+  uint16_t f_dc[3];         // 3 x FP16 (2 bytes each) = 6 bytes
+  uint16_t opacity;         // 1 x FP16 (2 bytes) = 2 bytes
+  uint16_t cov3d[6];        // 6 x FP32 (4 bytes each) = 24 bytes
+}; // Total: 40 bytes
 
 struct PLYHeaderLayout {
   int pos[3] = {-1, -1, -1};
