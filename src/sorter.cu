@@ -8,7 +8,7 @@ constexpr bool ENABLE_FRUSTUM_CULLING = true;
 constexpr bool ENABLE_OPACITY_CULLING = true;
 // constexpr bool ENABLE_SCALE_CULLING = true;
 constexpr bool ENABLE_PIXEL_CULLING = true;
-constexpr bool ENABLE_LOD_CULLING = false;
+constexpr bool ENABLE_LOD_CULLING = true;
 // constexpr float OPACITY_THRESHOLD_LOGIT = -4.0f;
 
 __global__ void cullAndCompactKernel(
@@ -87,13 +87,13 @@ __global__ void cullAndCompactKernel(
           bool pixelPass = true;
 
           if constexpr (ENABLE_PIXEL_CULLING)
-            pixelPass = (pixelSize >= 0.75f);
+            pixelPass = (pixelSize >= 1.0f);
 
           // Stochastic LOD.
           bool lodPass = true;
 
           if constexpr (ENABLE_LOD_CULLING) {
-            if (pixelSize < 1.0f) {
+            if (pixelSize < 3.5f) {
               float ratio = (pixelSize - 1.3f) / (3.5f - 1.3f);
 
               ratio = fminf(fmaxf(ratio, 0.0f), 1.0f);

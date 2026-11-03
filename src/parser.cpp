@@ -4,12 +4,19 @@
 #include <fstream>
 #include <glm/gtc/packing.hpp>
 #include <iostream>
+#include <limits>
 #include <omp.h>
 #include <sstream>
 #include <vector>
 
-float opacityThreshold = -4.0f; // Threshold for opacity pruning
-float scaleThreshold = -1.5f;   // Threshold for scale pruning
+float opacityThreshold =
+    std::numeric_limits<float>::min(); // Threshold for opacity pruning
+float scaleThreshold =
+    std::numeric_limits<float>::max(); // Threshold for scale pruning
+
+const bool ENABLE_OPACITY_PRUNING =
+    false;                              // Set to true to enable opacity pruning
+const bool ENABLE_SCALE_PRUNING = true; // Set to true to enable scale pruning
 
 void GaussianSplatParser::readPlyFile(const std::string &filename) {
   // Reading the PLY file is a two phase process:
@@ -138,13 +145,13 @@ void GaussianSplatParser::readPlyFile(const std::string &filename) {
           float s0 = v[layout.scale[0]];
           float s1 = v[layout.scale[1]];
           float s2 = v[layout.scale[2]];
-          if (std::max({s0, s1, s2}) > scaleThreshold) {
+          if (std::max({s0, s1, s2}) > scaleThreshold && ENABLE_SCALE_PRUNING) {
             ++prunedScale;
             continue; // Skip this splat
           }
 
           float op = v[layout.opacity];
-          if (op < opacityThreshold) {
+          if (op < opacityThreshold && ENABLE_OPACITY_PRUNING) {
             ++prunedOpacity;
             continue; // Skip this splat
           }
