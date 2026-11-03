@@ -4,19 +4,19 @@
 #include <fstream>
 #include <glm/gtc/packing.hpp>
 #include <iostream>
-#include <limits>
 #include <omp.h>
 #include <sstream>
 #include <vector>
 
-float opacityThreshold =
-    std::numeric_limits<float>::min(); // Threshold for opacity pruning
-float scaleThreshold =
-    std::numeric_limits<float>::max(); // Threshold for scale pruning
+float scaleThreshold = 0.0f; // Threshold for scale pruning
 
-const bool ENABLE_OPACITY_PRUNING =
-    false;                              // Set to true to enable opacity pruning
-const bool ENABLE_SCALE_PRUNING = true; // Set to true to enable scale pruning
+constexpr float SH_C0 = 0.28209479177387814f;
+
+constexpr float COV_SCALE =
+    4096.0f; // Scale factor for covariance matrix packing
+
+constexpr bool ENABLE_SCALE_PRUNING =
+    true; // Set to true to enable scale pruning
 
 void GaussianSplatParser::readPlyFile(const std::string &filename) {
   // Reading the PLY file is a two phase process:
@@ -142,35 +142,75 @@ void GaussianSplatParser::readPlyFile(const std::string &filename) {
         for (size_t i = 0; i < actuallyRead; ++i) {
           const float *v = &chunk[i * layout.floatsPerVertex];
 
+          float op = v[layout.opacity];
+
+          float opFinal =
+              1 / (1 + std::exp(-op)); // Sigmoid function for opacity
+
+          float cuttoffFactor = 2.0f * std::log(255.0f * opFinal);
+
+          if (cuttoffFactor <= 0.0f) {
+            ++prunedOpacity;
+            continue; // Skip this splat
+          }
+
           float s0 = v[layout.scale[0]];
           float s1 = v[layout.scale[1]];
           float s2 = v[layout.scale[2]];
+
           if (std::max({s0, s1, s2}) > scaleThreshold && ENABLE_SCALE_PRUNING) {
             ++prunedScale;
             continue; // Skip this splat
           }
 
-          float op = v[layout.opacity];
-          if (op < opacityThreshold && ENABLE_OPACITY_PRUNING) {
-            ++prunedOpacity;
-            continue; // Skip this splat
-          }
+          glm::vec3 scaleVec(s0, s1, s2);
+          scaleVec = glm::exp(scaleVec); // Convert log-scale to actual scale
+
+          glm::mat3 S = glm::mat3(scaleVec.x, 0.0f, 0.0f, 0.0f, scaleVec.y,
+                                  0.0f, 0.0f, 0.0f, scaleVec.z);
+
+          glm::vec4 rotQuat(v[layout.rot[0]], v[layout.rot[1]],
+                            v[layout.rot[2]], v[layout.rot[3]]);
+
+          glm::vec4 q = glm::normalize(rotQuat);
+          float r = q.x;
+          float x = q.y;
+          float y = q.z;
+          float z = q.w;
+
+          glm::mat3 R =
+              glm::mat3(1.0f - 2.0f * (y * y + z * z), 2.0f * (x * y + r * z),
+                        2.0f * (x * z - r * y), 2.0f * (x * y - r * z),
+                        1.0f - 2.0f * (x * x + z * z), 2.0f * (y * z + x * r),
+                        2.0f * (x * z + y * r), 2.0f * (y * z - x * r),
+                        1.0f - 2.0f * (x * x + y * y));
+
+          glm::mat3 cov3d = R * S * glm::transpose(S) * glm::transpose(R);
+
+          float maxScale = std::max({scaleVec.x, scaleVec.y, scaleVec.z});
+          float worldEffectiveRadius = maxScale * std::sqrt(cuttoffFactor);
 
           GaussianSplatFP16 s;
           s.pos[0] = glm::packHalf1x16(v[layout.pos[0]]);
           s.pos[1] = glm::packHalf1x16(v[layout.pos[1]]);
           s.pos[2] = glm::packHalf1x16(v[layout.pos[2]]);
 
+          s.cov3d[0] = glm::packHalf1x16(cov3d[0][0] * COV_SCALE);
+          s.cov3d[1] = glm::packHalf1x16(cov3d[0][1] * COV_SCALE);
+          s.cov3d[2] = glm::packHalf1x16(cov3d[0][2] * COV_SCALE);
+          s.cov3d[3] = glm::packHalf1x16(cov3d[1][1] * COV_SCALE);
+          s.cov3d[4] = glm::packHalf1x16(cov3d[1][2] * COV_SCALE);
+          s.cov3d[5] = glm::packHalf1x16(cov3d[2][2] * COV_SCALE);
+
+          s.effectiveRadius = glm::packHalf1x16(worldEffectiveRadius);
+
           for (int c = 0; c < 3; ++c) {
-            s.f_dc[c] = glm::packHalf1x16(v[layout.f_dc[c]]);
-            s.scale[c] = glm::packHalf1x16(v[layout.scale[c]]);
+            float rgb = std::max(0.0f, 0.5f + SH_C0 * v[layout.f_dc[c]]);
+            s.f_dc[c] = glm::packHalf1x16(rgb);
           }
 
-          s.opacity = glm::packHalf1x16(op);
+          s.opacity = glm::packHalf1x16(opFinal);
 
-          for (int r = 0; r < 4; ++r) {
-            s.rot[r] = glm::packHalf1x16(v[layout.rot[r]]);
-          }
           localSplats.push_back(s);
         }
 

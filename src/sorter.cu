@@ -5,7 +5,6 @@
 #include <iostream>
 
 constexpr bool ENABLE_FRUSTUM_CULLING = true;
-constexpr bool ENABLE_OPACITY_CULLING = true;
 // constexpr bool ENABLE_SCALE_CULLING = true;
 constexpr bool ENABLE_PIXEL_CULLING = true;
 constexpr bool ENABLE_LOD_CULLING = true;
@@ -61,66 +60,48 @@ __global__ void cullAndCompactKernel(
 
       if (frustumPass) {
         // Opacity culling.
-        bool opacityPass = true;
 
-        if constexpr (ENABLE_OPACITY_CULLING) {
-          float op = __half2float(splatsHalf[base + 6]);
+        // Obliczenie rozmiaru splata.
+        float worldRadius = __half2float(splatsHalf[base + 3]);
+        float pixelSize = (worldRadius * 1080.0f) / clipW;
 
-          float opThreshold = fminf(-2.0f + 0.1f * depth, 0.5f);
+        // Hard pixel-size culling.
+        bool pixelPass = true;
 
-          // opacityPass = (op > OPACITY_THRESHOLD_LOGIT);
-          opacityPass = (op > opThreshold);
+        if constexpr (ENABLE_PIXEL_CULLING)
+          pixelPass = (pixelSize >= 1.0f);
+
+        // Stochastic LOD.
+        bool lodPass = true;
+
+        if constexpr (ENABLE_LOD_CULLING) {
+          if (pixelSize < 3.5f) {
+            float ratio = (pixelSize - 1.0f) / (3.5f - 1.0f);
+
+            ratio = fminf(fmaxf(ratio, 0.0f), 1.0f);
+
+            float keepProb = ratio * ratio;
+
+            uint32_t hash =
+                static_cast<uint32_t>(idx) * 747796405u + 2891336453u;
+
+            hash = ((hash >> ((hash >> 28u) + 4u)) ^ hash) * 277803737u;
+
+            float rand01 =
+                static_cast<float>(hash & 0xFFFFu) * (1.0f / 65536.0f);
+
+            lodPass = (rand01 < keepProb);
+          }
         }
 
-        if (opacityPass) {
-          // Obliczenie rozmiaru splata.
-          float s0 = __half2float(splatsHalf[base + 7]);
-          float s1 = __half2float(splatsHalf[base + 8]);
-          float s2 = __half2float(splatsHalf[base + 9]);
+        if (pixelPass && lodPass) {
+          keep = true;
 
-          float maxLogScale = fmaxf(s0, fmaxf(s1, s2));
+          uint16_t halfBits = __half_as_ushort(__float2half(depth));
 
-          float worldRadius = __expf(maxLogScale) * 3.0f;
-          float pixelSize = (worldRadius * 1080.0f) / clipW;
+          myKey = ~halfBits;
 
-          // Hard pixel-size culling.
-          bool pixelPass = true;
-
-          if constexpr (ENABLE_PIXEL_CULLING)
-            pixelPass = (pixelSize >= 1.0f);
-
-          // Stochastic LOD.
-          bool lodPass = true;
-
-          if constexpr (ENABLE_LOD_CULLING) {
-            if (pixelSize < 3.5f) {
-              float ratio = (pixelSize - 1.3f) / (3.5f - 1.3f);
-
-              ratio = fminf(fmaxf(ratio, 0.0f), 1.0f);
-
-              float keepProb = ratio * ratio;
-
-              uint32_t hash =
-                  static_cast<uint32_t>(idx) * 747796405u + 2891336453u;
-
-              hash = ((hash >> ((hash >> 28u) + 4u)) ^ hash) * 277803737u;
-
-              float rand01 =
-                  static_cast<float>(hash & 0xFFFFu) * (1.0f / 65536.0f);
-
-              lodPass = (rand01 < keepProb);
-            }
-          }
-
-          if (pixelPass && lodPass) {
-            keep = true;
-
-            uint16_t halfBits = __half_as_ushort(__float2half(depth));
-
-            myKey = ~halfBits;
-
-            localOffset = atomicAdd(&blockCount, 1u);
-          }
+          localOffset = atomicAdd(&blockCount, 1u);
         }
       }
     }
