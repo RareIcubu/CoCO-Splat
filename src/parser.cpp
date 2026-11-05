@@ -205,7 +205,7 @@ void GaussianSplatParser::readPlyFile(const std::string &filename) {
               std::clamp(cov3d[1][1] * COV_SCALE, -65500.0f, 65500.0f));
           s.cov3d[4] = glm::packHalf1x16(
               std::clamp(cov3d[1][2] * COV_SCALE, -65500.0f, 65500.0f));
-          s.cov3d[6] = glm::packHalf1x16(
+          s.cov3d[5] = glm::packHalf1x16(
               std::clamp(cov3d[2][2] * COV_SCALE, -65500.0f, 65500.0f));
 
           s.effectiveRadius = glm::packHalf1x16(worldEffectiveRadius);
