@@ -195,12 +195,18 @@ void GaussianSplatParser::readPlyFile(const std::string &filename) {
           s.pos[1] = glm::packHalf1x16(v[layout.pos[1]]);
           s.pos[2] = glm::packHalf1x16(v[layout.pos[2]]);
 
-          s.cov3d[0] = glm::packHalf1x16(cov3d[0][0] * COV_SCALE);
-          s.cov3d[1] = glm::packHalf1x16(cov3d[0][1] * COV_SCALE);
-          s.cov3d[2] = glm::packHalf1x16(cov3d[0][2] * COV_SCALE);
-          s.cov3d[3] = glm::packHalf1x16(cov3d[1][1] * COV_SCALE);
-          s.cov3d[4] = glm::packHalf1x16(cov3d[1][2] * COV_SCALE);
-          s.cov3d[5] = glm::packHalf1x16(cov3d[2][2] * COV_SCALE);
+          s.cov3d[0] = glm::packHalf1x16(
+              std::clamp(cov3d[0][0] * COV_SCALE, -65500.0f, 65500.0f));
+          s.cov3d[1] = glm::packHalf1x16(
+              std::clamp(cov3d[0][1] * COV_SCALE, -65500.0f, 65500.0f));
+          s.cov3d[2] = glm::packHalf1x16(
+              std::clamp(cov3d[0][2] * COV_SCALE, -65500.0f, 65500.0f));
+          s.cov3d[3] = glm::packHalf1x16(
+              std::clamp(cov3d[1][1] * COV_SCALE, -65500.0f, 65500.0f));
+          s.cov3d[4] = glm::packHalf1x16(
+              std::clamp(cov3d[1][2] * COV_SCALE, -65500.0f, 65500.0f));
+          s.cov3d[6] = glm::packHalf1x16(
+              std::clamp(cov3d[2][2] * COV_SCALE, -65500.0f, 65500.0f));
 
           s.effectiveRadius = glm::packHalf1x16(worldEffectiveRadius);
 

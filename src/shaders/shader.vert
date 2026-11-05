@@ -71,7 +71,7 @@ void main()
   mat3 J = mat3(
       focal.x / tz, 0.0f, 0.0f,
       0.0f, focal.y / tz, 0.0f,
-      -(focal.x * p_view.x) / tz2, -(focal.y * p_view.y) / tz2, 0.0f
+      (focal.x * p_view.x) / tz2, (focal.y * p_view.y) / tz2, 0.0f
   );
 
   mat3 W = mat3(view * model);
@@ -82,7 +82,7 @@ void main()
   cov2d[0][0] += 0.3f;
   cov2d[1][1] += 0.3f;
 
-  // 5. Wartości i wektory własne macierzy 2D
+  // 5. Values and vectors for eigen decomposition of 2x2 covariance matrix
   float a = cov2d[0][0];
   float b = cov2d[0][1];
   float c = cov2d[1][1];
@@ -92,16 +92,15 @@ void main()
   float lambda1 = mid + radius;
   float lambda2 = max(mid - radius, 0.1f);
 
-  vec2 diagVec = normalize(vec2(b, lambda1 - a));
-  if (abs(b) < 1e-6f) {
-    diagVec = (a >= c) ? vec2(1.0f, 0.0f) : vec2(0.0f, 1.0f);
-  }
+  vec2 diagVec = (abs(b) > 1e-6f)
+    ? ((a >= c) ? normalize(vec2(lambda1 - c, b)) : normalize(vec2(b, lambda1 - a)))
+    : ((a >= c) ? vec2(1.0f, 0.0f) : vec2(0.0f, 1.0f));
 
   float cutoffFactor = 2.0f * log(255.0f * opacity);
  
   float cutoffRadius = sqrt(cutoffFactor);
 
-  // 6. Rozciągnięcie quada wzdłuż wektorów własnych
+  // 6. Stretching quad vertices along the eigenvectors of the covariance matrix
   vec2 v1 = min(sqrt(lambda1), 512.0f) * diagVec;
   vec2 v2 = min(sqrt(lambda2), 512.0f) * vec2(diagVec.y, -diagVec.x);
 
@@ -112,7 +111,7 @@ void main()
 
   gl_Position = vec4((ndcCenter + ndcOffset) * p_clip.w, p_clip.z, p_clip.w);
 
-  // 7. Przekazanie atrybutów do Fragment Shadera
+  // 7. Share data with fragment shader
   fColor = max(aInstanceColor, vec3(0.0f));
   uv = aQuadPos * cutoffRadius;
   fOpacity = opacity;

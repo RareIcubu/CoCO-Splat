@@ -76,13 +76,13 @@ __global__ void cullAndCompactKernel(
 
         if constexpr (ENABLE_PIXEL_CULLING)
           pixelPass =
-              (screenPromil >= 2.0f); // Threshold: 0.1% of the screen height.
+              (screenPromil >= 2.0f); // Threshold: 0.2% of the screen height.
 
         // Stochastic LOD.
         bool lodPass = true;
 
         if constexpr (ENABLE_LOD_CULLING) {
-          if (pixelPass && screenPromil < 3.5f) { // LOD threshold: from 0.1% to
+          if (pixelPass && screenPromil < 3.5f) { // LOD threshold: from 0.2% to
                                                   // 0.35% of the screen height.
             float ratio = (screenPromil - 2.0f) / (3.5f - 2.0f);
 
