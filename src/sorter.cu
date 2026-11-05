@@ -10,13 +10,15 @@ constexpr bool ENABLE_PIXEL_CULLING = true;
 constexpr bool ENABLE_LOD_CULLING = true;
 // constexpr float OPACITY_THRESHOLD_LOGIT = -4.0f;
 
+// Cuda kernel for culling and compacting splats based on depth, frustum, pixel
+// size, and LOD.
 __global__ void cullAndCompactKernel(
     const __half *__restrict__ splatsHalf, uint16_t *__restrict__ keysOut,
     uint32_t *__restrict__ valsOut, uint32_t *__restrict__ globalVisibleCount,
-    size_t numSplats, float focal, float vm2x, float vm2y, float vm2z,
-    float vm2w, float m0, float m1, float m2, float m3, float m4, float m5,
-    float m6, float m7, float m8, float m9, float m10, float m11, float m12,
-    float m13, float m14, float m15) {
+    size_t numSplats, float screenScalePromil, float vm2x, float vm2y,
+    float vm2z, float vm2w, float m0, float m1, float m2, float m3, float m4,
+    float m5, float m6, float m7, float m8, float m9, float m10, float m11,
+    float m12, float m13, float m14, float m15) {
   __shared__ uint32_t blockCount;
   __shared__ uint32_t blockBaseOffset;
 
@@ -52,30 +54,37 @@ __global__ void cullAndCompactKernel(
         float clipX = m0 * x + m4 * y + m8 * z + m12;
         float clipY = m1 * x + m5 * y + m9 * z + m13;
 
+        // Level of detail culling: we allow a small margin outside the frustum
+        // to avoid popping artifacts.
         float limit = 1.2f * clipW;
 
         frustumPass = frustumPass && clipX >= -limit && clipX <= limit &&
                       clipY >= -limit && clipY <= limit;
       }
 
+      // If the splat passes the frustum culling, we proceed to pixel size and
+      // LOD culling.
       if (frustumPass) {
 
-        // Obliczenie rozmiaru splata.
+        // Calculate the pixel size of the splat based on its world radius and
+        // depth.
         float worldRadius = __half2float(splatsHalf[base + 3]);
-        float pixelSize = (worldRadius * focal) / clipW;
+        float screenPromil = (worldRadius * screenScalePromil) / clipW;
 
         // Hard pixel-size culling.
         bool pixelPass = true;
 
         if constexpr (ENABLE_PIXEL_CULLING)
-          pixelPass = (pixelSize >= 1.0f);
+          pixelPass =
+              (screenPromil >= 1.0f); // Threshold: 0.1% of the screen height.
 
         // Stochastic LOD.
         bool lodPass = true;
 
         if constexpr (ENABLE_LOD_CULLING) {
-          if (pixelSize < 3.5f) {
-            float ratio = (pixelSize - 1.0f) / (3.5f - 1.0f);
+          if (pixelPass && screenPromil < 3.5f) { // LOD threshold: from 0.1% to
+                                                  // 0.35% of the screen height.
+            float ratio = (screenPromil - 1.0f) / (3.5f - 1.0f);
 
             ratio = fminf(fmaxf(ratio, 0.0f), 1.0f);
 
@@ -105,8 +114,6 @@ __global__ void cullAndCompactKernel(
       }
     }
   }
-
-  // Żaden wątek nie może ominąć tej synchronizacji.
   __syncthreads();
 
   if (threadIdx.x == 0 && blockCount > 0)
@@ -138,7 +145,7 @@ void initCudaSorter(CudaSorter &s, unsigned int splatSSBO,
   cudaMalloc(&s.d_keys_out, count * sizeof(uint16_t));
   cudaMalloc(&s.d_vals_in, count * sizeof(uint32_t));
 
-  // Wyznaczamy wymagany rozmiar pamięci tymczasowej CUB.
+  // Set up CUB temporary storage for sorting.
   s.temp_storage_bytes = 0;
 
   uint32_t *dummy_vals_out = nullptr;
@@ -155,11 +162,11 @@ void initCudaSorter(CudaSorter &s, unsigned int splatSSBO,
 }
 
 int sortSplatsCuda(CudaSorter &s, const float *vm, const float *mvp,
-                   float focal) {
+                   float screenScalePromil) {
   if (s.numSplats == 0)
     return 0;
 
-  // 1. Mapujemy SSBO z danymi splatów.
+  // 1. Mapping splats SSBO to CUDA.
   cudaGraphicsMapResources(1, &s.cudaSplatRes, 0);
 
   size_t splatBytes = 0;
@@ -167,10 +174,10 @@ int sortSplatsCuda(CudaSorter &s, const float *vm, const float *mvp,
   cudaGraphicsResourceGetMappedPointer((void **)&s.d_splats_mapped, &splatBytes,
                                        s.cudaSplatRes);
 
-  // 2. Zerujemy licznik widocznych splatów.
+  // 2. Zeroing the visible count before culling.
   cudaMemsetAsync(s.d_visible_count, 0, sizeof(uint32_t));
 
-  // 3. Uruchamiamy culling i compaction.
+  // 3. Running the culling and compaction kernel.
   constexpr int threadsPerBlock = 256;
 
   int blocksPerGrid =
@@ -178,20 +185,20 @@ int sortSplatsCuda(CudaSorter &s, const float *vm, const float *mvp,
 
   cullAndCompactKernel<<<blocksPerGrid, threadsPerBlock>>>(
       static_cast<const __half *>(s.d_splats_mapped), s.d_keys_in, s.d_vals_in,
-      s.d_visible_count, s.numSplats, focal,
+      s.d_visible_count, s.numSplats, screenScalePromil,
 
       vm[2], vm[6], vm[10], vm[14],
 
       mvp[0], mvp[1], mvp[2], mvp[3], mvp[4], mvp[5], mvp[6], mvp[7], mvp[8],
       mvp[9], mvp[10], mvp[11], mvp[12], mvp[13], mvp[14], mvp[15]);
 
-  // 4. Odczytujemy liczbę widocznych splatów.
+  // 4. Retrieving the number of visible splats after culling.
   uint32_t visibleCount = 0;
 
   cudaMemcpy(&visibleCount, s.d_visible_count, sizeof(uint32_t),
              cudaMemcpyDeviceToHost);
 
-  // 5. Sortujemy wyłącznie widoczne splaty.
+  // 5. Sorting the visible splats by depth using CUB radix sort.
   if (visibleCount > 0) {
     cudaGraphicsMapResources(1, &s.cudaIndexRes, 0);
 
@@ -208,7 +215,7 @@ int sortSplatsCuda(CudaSorter &s, const float *vm, const float *mvp,
     cudaGraphicsUnmapResources(1, &s.cudaIndexRes, 0);
   }
 
-  // 6. Zwalniamy dostęp CUDA do SSBO splatów.
+  // 6. Unmapping the splats SSBO from CUDA.
   cudaGraphicsUnmapResources(1, &s.cudaSplatRes, 0);
 
   s.d_splats_mapped = nullptr;
