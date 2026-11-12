@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "camera.h"
-#include "shader.h"
 #include <sorter.h>
 
 struct BenchmarkSample {

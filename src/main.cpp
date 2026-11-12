@@ -121,7 +121,12 @@ int main() {
   initCudaSorter(ctx.sorter, ctx.ssboSplats, ctx.ssboIndices,
                  ctx.totalActiveSplats);
 
-  Shader ourShader("../shaders/shader.vert", "../shaders/shader.frag");
+  std::filesystem::path exeDir =
+      std::filesystem::canonical("/proc/self/exe").parent_path();
+  std::filesystem::path vertPath = exeDir / "../shaders/shader.vert";
+  std::filesystem::path fragPath = exeDir / "../shaders/shader.frag";
+
+  Shader ourShader(vertPath.string().c_str(), fragPath.string().c_str());
   ctx.shaderID = ourShader.ID;
 
   glDisable(GL_DEPTH_TEST);

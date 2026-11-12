@@ -1,14 +1,16 @@
 #include <glad/glad.h>
 
 #include "EngineContext.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <iomanip>
 #include <iostream>
-
 #ifdef USE_IMGUI
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -379,10 +381,173 @@ void runImGuiLoop(EngineContext &ctx, Camera &camera) {
 // Loop 3: Screenshot loop (not implemented yet)
 // ============================================================
 
+struct TestCamera {
+  std::string imageName;
+  int widht;
+  int height;
+  float fx;
+  float fy;
+  glm::mat4 w2c; // World-To-Camera transformation matrix
+};
+
+void readCamerasFromFile(const std::string &filePath,
+                         std::vector<TestCamera> &cameras) {
+  std::ifstream file(filePath);
+  if (!file.is_open()) {
+    std::cerr << "[ERROR] Cannot open cameras file: " << filePath << "\n";
+    return;
+  }
+
+  cameras.clear();
+  int numCameras = 0;
+  if (!(file >> numCameras)) {
+    std::cerr << "[ERROR] Failed to read number of cameras from file: "
+              << filePath << "\n";
+    return;
+  }
+  for (int i = 0; i < numCameras; ++i) {
+    TestCamera cam;
+    if (!(file >> cam.imageName >> cam.widht >> cam.height >> cam.fx >>
+          cam.fy)) {
+      std::cerr << "[ERROR] Failed to read camera parameters" << i << "\n";
+      return;
+    }
+    float m[16];
+    for (int j = 0; j < 16; ++j) {
+      file >> m[j];
+    }
+    cam.w2c = glm::make_mat4(m);
+    cameras.push_back(cam);
+  }
+  file.close();
+}
+
 void runScreenshotLoop(EngineContext &ctx, const std::string &camerasFilePath,
                        const std::string &outputDir) {
+
+  std::vector<TestCamera> cameras;
+  readCamerasFromFile(camerasFilePath, cameras);
+  if (cameras.empty()) {
+    std::cerr << "[ERROR] No cameras loaded. Exiting screenshot loop.\n";
+    return;
+  }
+
+  std::filesystem::create_directories(outputDir);
+
   std::cout << "[SCREENSHOT MODE] Wczytywanie kamer z: " << camerasFilePath
             << "\n";
+
+  const int modelLoc = glGetUniformLocation(ctx.shaderID, "model");
+  const int viewLoc = glGetUniformLocation(ctx.shaderID, "view");
+  const int projectionLoc = glGetUniformLocation(ctx.shaderID, "projection");
+  const int viewportLoc = glGetUniformLocation(ctx.shaderID, "viewport");
+
+  // Changing COLMAP's projection matrix to OpenGL's projection matrix
+  glm::mat4 model = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, -1.0f, -1.0f));
+  glUseProgram(ctx.shaderID);
+  glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+  int currW = cameras[0].widht;
+  int currH = cameras[0].height;
+
+  GLuint screenshotFBO, colorTex;
+  glGenFramebuffers(1, &screenshotFBO);
+  glBindFramebuffer(GL_FRAMEBUFFER, screenshotFBO);
+
+  glGenTextures(1, &colorTex);
+  glBindTexture(GL_TEXTURE_2D, colorTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, currW, currH, 0, GL_RGB,
+               GL_UNSIGNED_BYTE, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                         colorTex, 0);
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    std::cerr << "[ERROR] Screenshot framebuffer is not complete!\n";
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteTextures(1, &colorTex);
+    glDeleteFramebuffers(1, &screenshotFBO);
+    return;
+  }
+
+  // Critical for images that widht cannot be divided by 4 (like 1920x1080)
+  glPixelStorei(GL_PACK_ALIGNMENT, 1);
+  // Flipping point (0,0) from bottom-left to top-left
+  stbi_flip_vertically_on_write(1);
+
+  std::vector<unsigned char> pixelBuffer(currW * currH * 3);
+
+  for (size_t i = 0; i < cameras.size(); ++i) {
+    const auto &cam = cameras[i];
+
+    if (cam.widht != currW || cam.height != currH) {
+      currW = cam.widht;
+      currH = cam.height;
+      glBindTexture(GL_TEXTURE_2D, colorTex);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, currW, currH, 0, GL_RGB,
+                   GL_UNSIGNED_BYTE, nullptr);
+      pixelBuffer.resize(currW * currH * 3);
+    }
+
+    glViewport(0, 0, currW, currH);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // 1. Conversion from COLMAP's world-to-camera to OpenGL's view matrix
+    glm::mat4 view = model * cam.w2c * model;
+    glm::mat4 viewModel = model * cam.w2c;
+
+    // 2. Projection matrix from COLMAP's intrinsics
+    float zNear = 0.1f;
+    float zFar = 1000.0f;
+    glm::mat4 projection(0.0f);
+    projection[0][0] = (2.0f * cam.fx) / static_cast<float>(currW);
+    projection[1][1] = (2.0f * cam.fy) / static_cast<float>(currH);
+    projection[2][2] = -(zFar + zNear) / (zFar - zNear);
+    projection[2][3] = -1.0f;
+    projection[3][2] = -(2.0f * zFar * zNear) / (zFar - zNear);
+
+    glm::mat4 mvp = projection * viewModel;
+
+    // 3. sort splats using CUDA
+
+    float screenScalePromil = projection[1][1] * 500.0f;
+    int visibleSplats = sortSplatsCuda(ctx.sorter, glm::value_ptr(viewModel),
+                                       glm::value_ptr(mvp), screenScalePromil);
+
+    // 4. Drawing to FBO
+    glUseProgram(ctx.shaderID);
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+    glUniform2f(viewportLoc, static_cast<float>(currW),
+                static_cast<float>(currH));
+
+    glBindVertexArray(ctx.VAO);
+    if (visibleSplats > 0) {
+      glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, visibleSplats);
+    }
+    glBindVertexArray(0);
+    glFinish();
+
+    // 5. Read from FBO and save to PNG
+    glReadPixels(0, 0, currW, currH, GL_RGB, GL_UNSIGNED_BYTE,
+                 pixelBuffer.data());
+    std::filesystem::path outPath =
+        std::filesystem::path(outputDir) / cam.imageName;
+    stbi_write_png(outPath.string().c_str(), currW, currH, 3,
+                   pixelBuffer.data(), currW * 3);
+
+    std::cout << "\r[SCREENSHOT MODE] Saved " << cam.imageName << " ("
+              << (i + 1) << "/" << cameras.size() << ") with " << visibleSplats
+              << " visible splats.            " << std::flush;
+  }
+
+  std::cout << "\n[SCREENSHOT MODE] Finished saving " << cameras.size()
+            << " images to: " << outputDir << "\n";
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glDeleteTextures(1, &colorTex);
+  glDeleteFramebuffers(1, &screenshotFBO);
 }
 
 void destroyEngineContext(EngineContext &ctx) {
