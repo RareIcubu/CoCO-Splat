@@ -61,8 +61,7 @@ void GaussianSplatParser::readPlyFile(const std::string &filename) {
         ss >> rawVertexCount;
         std::cout << "Found: " << rawVertexCount << " splats." << std::endl;
       }
-    } else if (keyword ==
-               "property") { // <-- POPRAWKA 1: Wyciągnięte z "element"
+    } else if (keyword == "property") {
       std::string type, name;
       ss >> type >> name;
 
@@ -96,7 +95,7 @@ void GaussianSplatParser::readPlyFile(const std::string &filename) {
       else if (name == "rot_3")
         layout.rot[3] = idx;
 
-      layout.floatsPerVertex++; // <-- POPRAWKA 2: Zwiększanie licznika kolumn!
+      layout.floatsPerVertex++;
     } else if (keyword == "end_header") {
       break;
     }
@@ -224,10 +223,10 @@ void GaussianSplatParser::readPlyFile(const std::string &filename) {
         {
           splats.insert(splats.end(), localSplats.begin(), localSplats.end());
         }
-      } // <-- POPRAWKA 3: Koniec bloku #pragma omp parallel
+      }
 
       remaining -= actuallyRead; // Odejmowanie tylko raz w wątku głównym!
-    } // <-- POPRAWKA 4: Koniec pętli while (remaining > 0)
+    }
 
     splats.shrink_to_fit();
     vertexCount = static_cast<int>(splats.size());
