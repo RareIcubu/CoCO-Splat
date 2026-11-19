@@ -138,7 +138,8 @@ int main() {
   std::string mode = modeEnv ? modeEnv : "clean";
 
   if (mode == "imgui") {
-    runImGuiLoop(ctx, gCamera);
+    const char *camEnv = std::getenv("TEST_CAMERAS_PATH");
+    runImGuiLoop(ctx, gCamera, camEnv ? camEnv : "test_cameras.txt");
   } else if (mode == "screenshot") {
     const char *camEnv = std::getenv("TEST_CAMERAS_PATH");
     const char *outEnv = std::getenv("SCREENSHOT_OUT_DIR");

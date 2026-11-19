@@ -1,8 +1,9 @@
 #ifndef ENGINECONTEXT_H
 #define ENGINECONTEXT_H
 
-#include <GLFW/glfw3.h>
 #include <glad/glad.h>
+
+#include <GLFW/glfw3.h>
 #include <string>
 #include <vector>
 
@@ -54,7 +55,8 @@ struct EngineContext {
 };
 
 void runCleanLoop(EngineContext &ctx, Camera &camera);
-void runImGuiLoop(EngineContext &ctx, Camera &camera);
+void runImGuiLoop(EngineContext &ctx, Camera &camera,
+                  const std::string &camerasFilePath);
 void runScreenshotLoop(EngineContext &ctx, const std::string &camerasFilePath,
                        const std::string &outputDir);
 

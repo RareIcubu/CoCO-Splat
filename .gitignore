@@ -5,7 +5,12 @@ src/build
 
 build/
 cmake-build-*/
+benchmark_*.txt
+renders/
+imgui.ini
 
+test_cameras/
+demo.sh
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake

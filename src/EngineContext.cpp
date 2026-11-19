@@ -1,6 +1,7 @@
 #include <glad/glad.h>
 
 #include "EngineContext.h"
+#include "camera.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #include <chrono>
@@ -20,6 +21,8 @@
 // ============================================================
 // Implementation of BenchmarkRecorder
 // ============================================================
+
+bool setCameraViewModel = false;
 
 void BenchmarkRecorder::start(double currentTime) {
   if (isRecording)
@@ -108,6 +111,8 @@ void BenchmarkRecorder::saveToFile(const std::string &modelName) {
 // Internal movment input handler (WASD + Shift + ESC + F10)
 // ============================================================
 
+bool wasF5Pressed = false;
+
 static void handleMovementInput(GLFWwindow *window, Camera &camera,
                                 float deltaTime, BenchmarkRecorder &recorder) {
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
@@ -118,9 +123,19 @@ static void handleMovementInput(GLFWwindow *window, Camera &camera,
   else if (glfwGetKey(window, GLFW_KEY_X) == GLFW_RELEASE)
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-  // Start 5-sekundowego nagrywania pod F10
+  // Start recording benchmark when F10 is pressed
   if (glfwGetKey(window, GLFW_KEY_F10) == GLFW_PRESS)
     recorder.start(glfwGetTime());
+
+  bool isf5preseed = (GLFW_PRESS == glfwGetKey(window, GLFW_KEY_F5));
+
+  if (isf5preseed && !wasF5Pressed) {
+    setCameraViewModel = !setCameraViewModel;
+    std::cout << "[INFO] Camera view model set to: "
+              << (setCameraViewModel ? "COLMAP" : "Free") << "\n";
+  }
+
+  wasF5Pressed = isf5preseed;
 
   float speed =
       (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) ? 8.0f : 1.0f;
@@ -230,8 +245,49 @@ void runCleanLoop(EngineContext &ctx, Camera &camera) {
 // ============================================================
 // Loop 2: imGui lopp with telemetry and HUD
 // ============================================================
+struct TestCamera {
+  std::string imageName;
+  int widht;
+  int height;
+  float fx;
+  float fy;
+  glm::mat4 w2c; // World-To-Camera transformation matrix
+};
 
-void runImGuiLoop(EngineContext &ctx, Camera &camera) {
+void readCamerasFromFile(const std::string &filePath,
+                         std::vector<TestCamera> &cameras) {
+  std::ifstream file(filePath);
+  if (!file.is_open()) {
+    std::cerr << "[ERROR] Cannot open cameras file: " << filePath << "\n";
+    return;
+  }
+
+  cameras.clear();
+  int numCameras = 0;
+  if (!(file >> numCameras)) {
+    std::cerr << "[ERROR] Failed to read number of cameras from file: "
+              << filePath << "\n";
+    return;
+  }
+  for (int i = 0; i < numCameras; ++i) {
+    TestCamera cam;
+    if (!(file >> cam.imageName >> cam.widht >> cam.height >> cam.fx >>
+          cam.fy)) {
+      std::cerr << "[ERROR] Failed to read camera parameters" << i << "\n";
+      return;
+    }
+    float m[16];
+    for (int j = 0; j < 16; ++j) {
+      file >> m[j];
+    }
+    cam.w2c = glm::make_mat4(m);
+    cameras.push_back(cam);
+  }
+  file.close();
+}
+
+void runImGuiLoop(EngineContext &ctx, Camera &camera,
+                  const std::string &camerasFilepath) {
 #ifndef USE_IMGUI
   std::cerr << "[WARN] Compiled with without USE_IMGUI flag! Preparing to run "
                "main loop...\n";
@@ -263,6 +319,16 @@ void runImGuiLoop(EngineContext &ctx, Camera &camera) {
   bool tabPressedLastFrame = false;
   bool f1PressedLastFrame = false;
   BenchmarkRecorder recorder;
+
+  std::vector<TestCamera> cameras;
+  if (std::filesystem::exists(camerasFilepath)) {
+    readCamerasFromFile(camerasFilepath, cameras);
+    std::cout << "[INFO] Loaded " << cameras.size()
+              << " cameras from: " << camerasFilepath << "\n";
+  } else {
+    std::cout << "Info: Cameras file not found: " << camerasFilepath
+              << ". Continuing without camera view model.\n";
+  }
 
   while (!glfwWindowShouldClose(ctx.window)) {
     double currentFrame = glfwGetTime();
@@ -296,13 +362,37 @@ void runImGuiLoop(EngineContext &ctx, Camera &camera) {
     glClearColor(ctx.bgColor[0], ctx.bgColor[1], ctx.bgColor[2], 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glm::mat4 view = camera.GetViewMatrix();
-    float aspect = static_cast<float>(fbWidth) / static_cast<float>(fbHeight);
-    glm::mat4 projection =
-        glm::perspective(glm::radians(camera.Zoom), aspect, 0.1f, 1000.0f);
-    glm::mat4 viewModel = view * model;
-    glm::mat4 mvp = projection * viewModel;
+    glm::mat4 view;
+    glm::mat4 projection(0.0f);
+    glm::mat4 viewModel;
+    glm::mat4 mvp;
+    if (setCameraViewModel && !cameras.empty()) {
 
+      const TestCamera cam = cameras[0];
+
+      view = model * cam.w2c * model;
+      viewModel = model * cam.w2c;
+
+      // 2. Projection matrix from COLMAP's intrinsics
+      float zNear = 0.1f;
+      float zFar = 1000.0f;
+      float aspect = static_cast<float>(fbWidth) / static_cast<float>(fbHeight);
+      projection[1][1] = (2.0f * cam.fy) / static_cast<float>(cam.height);
+      projection[0][0] = projection[1][1] / aspect;
+      projection[2][2] = -(zFar + zNear) / (zFar - zNear);
+      projection[2][3] = -1.0f;
+      projection[3][2] = -(2.0f * zFar * zNear) / (zFar - zNear);
+
+      mvp = projection * viewModel;
+    } else {
+
+      view = camera.GetViewMatrix();
+      float aspect = static_cast<float>(fbWidth) / static_cast<float>(fbHeight);
+      projection =
+          glm::perspective(glm::radians(camera.Zoom), aspect, 0.1f, 1000.0f);
+      viewModel = view * model;
+      mvp = projection * viewModel;
+    }
     if (mvp != lastMvp || recorder.isRecording) {
       auto t0 = std::chrono::high_resolution_clock::now();
       float screenScalePromil = projection[1][1] * 500.0f;
@@ -356,7 +446,8 @@ void runImGuiLoop(EngineContext &ctx, Camera &camera) {
                            "[REC F10] %.1f / 5.0 s",
                            currentFrame - recorder.startTime);
       } else {
-        ImGui::TextDisabled("[F10] Record 5s | [TAB] Cursor | [F1] HUD");
+        ImGui::TextDisabled(
+            "[F10] Record 5s | [TAB] Cursor | [F1] HUD | [F5] Camera");
       }
       ImGui::End();
 
@@ -378,49 +469,8 @@ void runImGuiLoop(EngineContext &ctx, Camera &camera) {
 }
 
 // ============================================================
-// Loop 3: Screenshot loop (not implemented yet)
+// Loop 3: Screenshot loop
 // ============================================================
-
-struct TestCamera {
-  std::string imageName;
-  int widht;
-  int height;
-  float fx;
-  float fy;
-  glm::mat4 w2c; // World-To-Camera transformation matrix
-};
-
-void readCamerasFromFile(const std::string &filePath,
-                         std::vector<TestCamera> &cameras) {
-  std::ifstream file(filePath);
-  if (!file.is_open()) {
-    std::cerr << "[ERROR] Cannot open cameras file: " << filePath << "\n";
-    return;
-  }
-
-  cameras.clear();
-  int numCameras = 0;
-  if (!(file >> numCameras)) {
-    std::cerr << "[ERROR] Failed to read number of cameras from file: "
-              << filePath << "\n";
-    return;
-  }
-  for (int i = 0; i < numCameras; ++i) {
-    TestCamera cam;
-    if (!(file >> cam.imageName >> cam.widht >> cam.height >> cam.fx >>
-          cam.fy)) {
-      std::cerr << "[ERROR] Failed to read camera parameters" << i << "\n";
-      return;
-    }
-    float m[16];
-    for (int j = 0; j < 16; ++j) {
-      file >> m[j];
-    }
-    cam.w2c = glm::make_mat4(m);
-    cameras.push_back(cam);
-  }
-  file.close();
-}
 
 void runScreenshotLoop(EngineContext &ctx, const std::string &camerasFilePath,
                        const std::string &outputDir) {
