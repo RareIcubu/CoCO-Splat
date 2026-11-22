@@ -1,14 +1,13 @@
 #include <glad/glad.h>
 
-#include <GLFW/glfw3.h>
-#include <filesystem>
-#include <glad/glad.h>
-#include <iostream>
-
 #include "EngineContext.h"
 #include "camera.h"
 #include "parser.h"
 #include "shader.h"
+#include <GLFW/glfw3.h>
+#include <cstdlib>
+#include <filesystem>
+#include <iostream>
 
 Camera gCamera(glm::vec3(0.0f, 0.0f, 3.0f));
 float lastX = 1920.0f / 2.0f, lastY = 1080.0f / 2.0f;
@@ -45,12 +44,20 @@ void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
 static const float quadVertices[] = {-1.0f, -1.0f, 1.0f, -1.0f,
                                      -1.0f, 1.0f,  1.0f, 1.0f};
 
-int main() {
-  const char *envPath = std::getenv("PLY_FILE_PATH");
-  std::string filename = envPath ? envPath : "../../DELL.ply";
-
+int main(int argc, char **argv) {
+  std::string plyPath;
+  if (argc > 1) {
+    plyPath = argv[1];
+  } else if (const char *envPath = std::getenv("PLY_FILE_PATH");
+             envPath && envPath[0] != '\0') {
+    plyPath = envPath;
+  } else {
+    std::cerr << "Usage: " << argv[0]
+              << " <scene.ply>  (or set PLY_FILE_PATH)\n";
+    return 1;
+  }
   GaussianSplatParser parser;
-  parser.readPlyFile(filename);
+  parser.readPlyFile(plyPath);
   if (parser.splats.empty()) {
     std::cerr << "No splats found in the PLY file." << std::endl;
     return -1;
@@ -89,7 +96,7 @@ int main() {
   ctx.totalActiveSplats = parser.vertexCount;
   ctx.optimizedVramMiB =
       (parser.splats.size() * sizeof(GaussianSplatFP16)) / (1024.0f * 1024.0f);
-  ctx.modelName = std::filesystem::path(filename).stem().string();
+  ctx.modelName = std::filesystem::path(plyPath).stem().string();
 
   glGenBuffers(1, &ctx.VBO);
   glGenVertexArrays(1, &ctx.VAO);
